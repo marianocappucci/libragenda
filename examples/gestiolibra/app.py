@@ -1,4 +1,4 @@
-"""Minimal TurnoLibra integration example.
+"""Minimal Gestiolibra integration example.
 
 This is vertical application code, not part of LibraGenda's public HTTP API.
 """
@@ -41,11 +41,11 @@ def create_app(database_url: str) -> FastAPI:
     sessions = get_session_factory()
     catalog = SqlAlchemyCatalogRepository(sessions)
     appointments = SqlAlchemyAppointmentRepository(sessions)
-    app = FastAPI(title="TurnoLibra example")
+    app = FastAPI(title="Gestiolibra example")
 
     @app.get("/health")
     def health():
-        return {"ok": True, "product": "turnolibra-example"}
+        return {"ok": True, "product": "gestiolibra-example"}
 
     @app.post("/demo/seed")
     def seed(data: SeedRequest):

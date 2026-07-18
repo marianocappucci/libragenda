@@ -5,7 +5,7 @@ Libra. Es un módulo independiente y peer de
 [LibraCore](https://github.com/marianocappucci/libracore): ningún motor
 depende del otro.
 
-Los primeros consumidores previstos son TurnoLibra y MedLibra. El motor debe
+Los primeros consumidores previstos son Gestiolibra y MedLibra. El motor debe
 mantenerse agnóstico del vertical: un recurso puede ser una persona, un
 consultorio, una cabina, una máquina o cualquier otra cosa reservable.
 

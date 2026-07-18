@@ -1,9 +1,9 @@
 from fastapi.testclient import TestClient
 
-from examples.turnolibra.app import create_app
+from examples.gestiolibra.app import create_app
 
 
-def test_turnolibra_example_creates_and_confirms_appointment():
+def test_gestiolibra_example_creates_and_confirms_appointment():
     client = TestClient(create_app("sqlite:///:memory:"))
     seed = client.post("/demo/seed", json={
         "resource_id": "resource-1", "resource_name": "Box 1",
