@@ -3,6 +3,7 @@
 from datetime import datetime
 
 from .domain import Appointment, AppointmentStatus, Availability
+from .repositories import AppointmentRepository, InMemoryAppointmentRepository
 from .scheduling import (
     AvailabilityException,
     TimeBlock,
@@ -54,24 +55,28 @@ class InMemoryScheduler:
         availability: list[Availability] | None = None,
         blocks: list[TimeBlock] | None = None,
         exceptions: list[AvailabilityException] | None = None,
+        repository: AppointmentRepository | None = None,
     ) -> None:
         self.availability = availability or []
         self.blocks = blocks or []
         self.exceptions = exceptions or []
-        self._appointments: dict[str, Appointment] = {}
+        self.repository = repository or InMemoryAppointmentRepository()
 
     def create(self, appointment: Appointment) -> Appointment:
-        if appointment.id in self._appointments:
+        if self.repository.get(appointment.id) is not None:
             raise ScheduleError(f"appointment already exists: {appointment.id}")
         self._validate_slot(appointment)
-        self._appointments[appointment.id] = appointment
+        try:
+            self.repository.add(appointment)
+        except ValueError as exc:
+            raise ScheduleError(str(exc)) from exc
         return appointment
 
     def get(self, appointment_id: str) -> Appointment:
-        try:
-            return self._appointments[appointment_id]
-        except KeyError as exc:
-            raise AppointmentNotFound(appointment_id) from exc
+        appointment = self.repository.get(appointment_id)
+        if appointment is None:
+            raise AppointmentNotFound(appointment_id)
+        return appointment
 
     def confirm(self, appointment_id: str) -> Appointment:
         return self._transition(appointment_id, AppointmentStatus.CONFIRMED)
@@ -89,7 +94,7 @@ class InMemoryScheduler:
             status=current.status,
         )
         self._validate_slot(candidate, exclude_id=current.id)
-        self._appointments[appointment_id] = candidate
+        self.repository.save(candidate)
         return candidate
 
     def _transition(self, appointment_id: str, target: AppointmentStatus) -> Appointment:
@@ -103,7 +108,7 @@ class InMemoryScheduler:
             client_id=current.client_id, starts_at=current.starts_at,
             duration=current.duration, status=target,
         )
-        self._appointments[appointment_id] = updated
+        self.repository.save(updated)
         return updated
 
     def _validate_slot(self, appointment: Appointment, exclude_id: str | None = None) -> None:
@@ -111,6 +116,6 @@ class InMemoryScheduler:
             appointment, self.availability, self.blocks, self.exceptions
         ):
             raise AppointmentUnavailable(appointment.id)
-        existing = [item for item in self._appointments.values() if item.id != exclude_id]
+        existing = [item for item in self.repository.list() if item.id != exclude_id]
         if find_conflicts(appointment, existing):
             raise AppointmentConflict(appointment.id)

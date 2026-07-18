@@ -37,3 +37,5 @@ from .application import (
     InMemoryScheduler,
     InvalidTransition,
 )
+
+from .repositories import AppointmentRepository, InMemoryAppointmentRepository
