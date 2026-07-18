@@ -33,8 +33,19 @@ PostgreSQL, Alembic, Docker y tag `v0.1.0`.
   Persistencia SQL (`deposits`, unique constraint en `appointment_id`) +
   versión en memoria.
 
-## Fase 3 — consumo vertical
+## Fase 3 — consumo vertical (en curso)
 
-- Gestiolibra usa LibraGenda en un entorno dev real.
+- Gestiolibra usa LibraGenda en un entorno dev real (completo). Pin
+  actualizado a `v0.3.0`, base `gestiolibra` dedicada (Postgres 16 del VPS
+  Donweb, mismo contenedor que la de LibraGenda, usuario propio
+  `gestiolibra_dev`) migrada con la cadena Alembic completa (`0001`→`0006`)
+  aplicada desde un checkout de esa versión exacta (las migraciones no
+  viajan en el paquete pip). Verificado con un flujo real de alta de
+  sucursal/recurso/servicio/cliente + crear/confirmar turno usando los
+  repositorios SQLAlchemy reales (no el `create_all()` del demo) contra esa
+  base migrada — no solo que el pin instale, sino que el schema real
+  funcione end-to-end. Confirmó que las Fases 1-2 fueron aditivas: el
+  smoke test sqlite preexistente de Gestiolibra siguió pasando sin tocar
+  código de la app.
 - MedLibra consume el mismo contrato sin contaminar el motor con clínica.
 - Tag estable posterior a la primera integración real.
