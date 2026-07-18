@@ -11,3 +11,19 @@ try:
 except Exception:
     __version__ = "0.0.0.dev0"
 
+
+from .domain import (
+    Appointment,
+    AppointmentStatus,
+    Availability,
+    Resource,
+    Service,
+)
+
+__all__ = [
+    "Appointment",
+    "AppointmentStatus",
+    "Availability",
+    "Resource",
+    "Service",
+]

@@ -11,8 +11,10 @@ consultorio, una cabina, una máquina o cualquier otra cosa reservable.
 
 ## Estado
 
-Scaffold inicial. El contrato de dominio y la API pública se definirán antes
-de incorporar persistencia o integración con los productos verticales.
+Primera API de dominio definida, sin persistencia ni framework. Incluye
+`Resource`, `Service`, `Availability`, `Appointment` y `AppointmentStatus`.
+La siguiente capa deberá resolver reglas de agenda (solapamientos, bloqueos y
+excepciones) antes de incorporar persistencia o integración vertical.
 
 ## Desarrollo
 
