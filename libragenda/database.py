@@ -2,6 +2,7 @@
 
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 _engine: Engine | None = None
 _session_factory: sessionmaker[Session] | None = None
@@ -15,6 +16,9 @@ def configure(url: str, **engine_options) -> None:
     the application starts serving traffic.
     """
     global _engine, _session_factory
+    if url == "sqlite:///:memory:":
+        engine_options.setdefault("connect_args", {"check_same_thread": False})
+        engine_options.setdefault("poolclass", StaticPool)
     _engine = create_engine(url, **engine_options)
     _session_factory = sessionmaker(_engine, expire_on_commit=False)
 
