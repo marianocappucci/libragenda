@@ -29,3 +29,11 @@ __all__ = [
 ]
 
 from .scheduling import AvailabilityException, TimeBlock
+
+from .application import (
+    AppointmentConflict,
+    AppointmentNotFound,
+    AppointmentUnavailable,
+    InMemoryScheduler,
+    InvalidTransition,
+)
