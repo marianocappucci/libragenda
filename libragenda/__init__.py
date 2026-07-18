@@ -27,3 +27,5 @@ __all__ = [
     "Resource",
     "Service",
 ]
+
+from .scheduling import AvailabilityException, TimeBlock
