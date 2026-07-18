@@ -1,0 +1,26 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: libragenda
+      POSTGRES_USER: libragenda_dev
+      POSTGRES_PASSWORD: libragenda_dev_only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U libragenda_dev -d libragenda"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - libragenda_pgdata:/var/lib/postgresql/data
+
+  tests:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg://libragenda_dev:libragenda_dev_only@db:5432/libragenda
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["pytest", "-q"]
+
+volumes:
+  libragenda_pgdata:
