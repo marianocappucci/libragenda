@@ -39,3 +39,5 @@ from .application import (
 )
 
 from .repositories import AppointmentRepository, InMemoryAppointmentRepository
+
+from .sqlalchemy_repository import SqlAlchemyAppointmentRepository

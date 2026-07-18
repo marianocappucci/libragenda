@@ -13,8 +13,10 @@ consultorio, una cabina, una máquina o cualquier otra cosa reservable.
 
 Primera API de dominio definida, sin persistencia ni framework. Incluye
 `Resource`, `Service`, `Availability`, `Appointment` y `AppointmentStatus`.
-La siguiente capa deberá resolver reglas de agenda (solapamientos, bloqueos y
-excepciones) antes de incorporar persistencia o integración vertical.
+La persistencia inicial usa SQLAlchemy 2, con PostgreSQL como destino de
+producción y SQLite en tests. El esquema mínimo actual contiene la tabla
+`appointments`; el repositorio recibe una `sessionmaker` y los casos de uso
+continúan sin conocer SQLAlchemy.
 
 ## Desarrollo
 
