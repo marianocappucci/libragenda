@@ -47,5 +47,14 @@ PostgreSQL, Alembic, Docker y tag `v0.1.0`.
   funcione end-to-end. Confirmó que las Fases 1-2 fueron aditivas: el
   smoke test sqlite preexistente de Gestiolibra siguió pasando sin tocar
   código de la app.
-- MedLibra consume el mismo contrato sin contaminar el motor con clínica.
+- MedLibra consume el mismo contrato sin contaminar el motor con clínica
+  (completo). Repo creado desde cero (`github.com/marianocappucci/medlibra`,
+  privado) con el mismo scaffold que Gestiolibra: FastAPI, LibraGenda
+  `v0.3.0` pineado, sin ningún dominio clínico todavía (eso es Fase 1 propia
+  de MedLibra). Base `medlibra` dedicada (mismo Postgres 16 del VPS Donweb,
+  usuario propio `medlibra_dev`, sin compartir schema con LibraGenda ni con
+  Gestiolibra) migrada con la misma cadena Alembic (`0001`→`0006`) y
+  verificada end-to-end con los repositorios SQLAlchemy reales. Prueba que
+  dos consumidores verticales distintos (turnos genéricos vs. salud) usan
+  el mismo motor sin que LibraGenda necesite saber cuál es cuál.
 - Tag estable posterior a la primera integración real.
