@@ -8,6 +8,7 @@ from .sqlalchemy_repository import (
     AvailabilityExceptionRow,
     AvailabilityRow,
     TimeBlockRow,
+    ensure_utc,
 )
 
 
@@ -126,8 +127,8 @@ class SqlAlchemyAvailabilityRepository:
     def _block_to_domain(row: TimeBlockRow) -> TimeBlock:
         return TimeBlock(
             resource_id=row.resource_id,
-            starts_at=row.starts_at,
-            ends_at=row.ends_at,
+            starts_at=ensure_utc(row.starts_at),
+            ends_at=ensure_utc(row.ends_at),
             reason=row.reason,
         )
 

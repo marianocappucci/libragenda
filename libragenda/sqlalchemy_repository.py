@@ -1,6 +1,6 @@
 """SQLAlchemy persistence adapter for appointments."""
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -14,6 +14,19 @@ from .domain import Appointment, AppointmentStatus
 
 class Base(DeclarativeBase):
     pass
+
+
+def ensure_utc(value: datetime) -> datetime:
+    """Normalize a `DateTime(timezone=True)` column value read back as naive.
+
+    SQLite has no native timestamptz type, so SQLAlchemy round-trips
+    `DateTime(timezone=True)` values as naive on that backend while
+    PostgreSQL correctly returns them timezone-aware — the same stored
+    instant, two different dialect behaviors. Every row->domain conversion
+    for such a column must call this so callers get a consistent aware
+    datetime regardless of which database is behind the repository.
+    """
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
 
 class BranchRow(Base):
@@ -189,7 +202,7 @@ class SqlAlchemyAppointmentRepository:
     def _to_domain(row: AppointmentRow) -> Appointment:
         return Appointment(
             id=row.id, resource_id=row.resource_id, service_id=row.service_id,
-            client_id=row.client_id, starts_at=row.starts_at,
+            client_id=row.client_id, starts_at=ensure_utc(row.starts_at),
             duration=timedelta(seconds=row.duration_seconds),
             status=AppointmentStatus(row.status), branch_id=row.branch_id,
             series_id=row.series_id,

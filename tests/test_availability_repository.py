@@ -35,12 +35,15 @@ def test_availability_crud_round_trip(repo: SqlAlchemyAvailabilityRepository):
 
 
 def test_block_crud_round_trip(repo: SqlAlchemyAvailabilityRepository):
-    from datetime import datetime
+    from datetime import datetime, timezone
 
+    # DateTime(timezone=True) always round-trips as aware — even on SQLite,
+    # which has no native tz type (see sqlalchemy_repository.ensure_utc) —
+    # so the domain object under comparison must start out aware too.
     block = TimeBlock(
         "resource-1",
-        starts_at=datetime(2026, 7, 20, 9, 0),
-        ends_at=datetime(2026, 7, 20, 10, 0),
+        starts_at=datetime(2026, 7, 20, 9, 0, tzinfo=timezone.utc),
+        ends_at=datetime(2026, 7, 20, 10, 0, tzinfo=timezone.utc),
         reason="maintenance",
     )
     block_id = repo.add_block(block)
@@ -49,8 +52,8 @@ def test_block_crud_round_trip(repo: SqlAlchemyAvailabilityRepository):
 
     updated = TimeBlock(
         "resource-1",
-        starts_at=datetime(2026, 7, 20, 11, 0),
-        ends_at=datetime(2026, 7, 20, 12, 0),
+        starts_at=datetime(2026, 7, 20, 11, 0, tzinfo=timezone.utc),
+        ends_at=datetime(2026, 7, 20, 12, 0, tzinfo=timezone.utc),
         reason="vacation",
     )
     repo.update_block(block_id, updated)

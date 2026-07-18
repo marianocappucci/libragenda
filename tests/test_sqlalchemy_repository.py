@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -11,8 +11,11 @@ def test_sqlalchemy_repository_round_trips_appointments():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
     repository = SqlAlchemyAppointmentRepository(sessionmaker(engine, expire_on_commit=False))
+    # DateTime(timezone=True) always round-trips as aware — even on SQLite,
+    # which has no native tz type (see sqlalchemy_repository.ensure_utc) —
+    # so the domain object under comparison must start out aware too.
     appointment = Appointment("apt-1", "resource-1", "service-1", "client-1",
-                              datetime(2026, 7, 20, 10), timedelta(minutes=45))
+                              datetime(2026, 7, 20, 10, tzinfo=timezone.utc), timedelta(minutes=45))
 
     repository.add(appointment)
     assert repository.get("apt-1") == appointment
