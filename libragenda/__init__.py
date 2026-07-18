@@ -15,6 +15,8 @@ except Exception:
 from .domain import (
     Appointment,
     AppointmentStatus,
+    Branch,
+    Client,
     Availability,
     Resource,
     Service,

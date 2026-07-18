@@ -103,3 +103,27 @@ class Appointment:
 
     def is_on(self, day: date) -> bool:
         return self.starts_at.date() == day
+
+
+@dataclass(frozen=True, slots=True)
+class Branch:
+    id: str
+    name: str
+    active: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.id.strip() or not self.name.strip():
+            raise ValueError("branch id and name cannot be empty")
+
+
+@dataclass(frozen=True, slots=True)
+class Client:
+    id: str
+    name: str
+    phone: str | None = None
+    email: str | None = None
+    active: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.id.strip() or not self.name.strip():
+            raise ValueError("client id and name cannot be empty")

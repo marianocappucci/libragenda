@@ -1,8 +1,8 @@
 """SQLAlchemy persistence adapter for appointments."""
 
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Time, create_engine, select
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, Time, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from .domain import Appointment, AppointmentStatus
@@ -12,12 +12,30 @@ class Base(DeclarativeBase):
     pass
 
 
+class BranchRow(Base):
+    __tablename__ = "branches"
+
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    active: Mapped[bool] = mapped_column(default=True)
+
+
+class ClientRow(Base):
+    __tablename__ = "clients"
+
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    active: Mapped[bool] = mapped_column(default=True)
+
+
 class ResourceRow(Base):
     __tablename__ = "resources"
 
     id: Mapped[str] = mapped_column(String(100), primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
-    branch_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    branch_id: Mapped[str | None] = mapped_column(ForeignKey("branches.id"), nullable=True, index=True)
     active: Mapped[bool] = mapped_column(default=True)
 
 
@@ -40,13 +58,34 @@ class AvailabilityRow(Base):
     ends_at: Mapped[time] = mapped_column(Time)
 
 
+class TimeBlockRow(Base):
+    __tablename__ = "time_blocks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    resource_id: Mapped[str] = mapped_column(ForeignKey("resources.id"), index=True)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    reason: Mapped[str] = mapped_column(Text, default="")
+
+
+class AvailabilityExceptionRow(Base):
+    __tablename__ = "availability_exceptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    resource_id: Mapped[str] = mapped_column(ForeignKey("resources.id"), index=True)
+    day: Mapped[date] = mapped_column(Date)
+    starts_at: Mapped[time] = mapped_column(Time)
+    ends_at: Mapped[time] = mapped_column(Time)
+    available: Mapped[bool] = mapped_column(default=False)
+
+
 class AppointmentRow(Base):
     __tablename__ = "appointments"
 
     id: Mapped[str] = mapped_column(String(100), primary_key=True)
     resource_id: Mapped[str] = mapped_column(ForeignKey("resources.id"), index=True)
     service_id: Mapped[str] = mapped_column(ForeignKey("services.id"), index=True)
-    client_id: Mapped[str] = mapped_column(String(100), index=True)
+    client_id: Mapped[str] = mapped_column(ForeignKey("clients.id"), index=True)
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     duration_seconds: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(30), index=True)
