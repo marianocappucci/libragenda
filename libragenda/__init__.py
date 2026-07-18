@@ -38,6 +38,13 @@ from .timezones import to_branch_local, to_utc, validate_timezone
 
 from .recurrence import RecurrenceRule, generate_occurrences
 
+from .notifications import (
+    NotificationPort,
+    ReminderNotification,
+    ReminderPolicy,
+    due_reminders,
+)
+
 from .application import (
     AppointmentConflict,
     AppointmentNotFound,
@@ -47,12 +54,21 @@ from .application import (
     ResourceBranchMismatch,
 )
 
-from .repositories import AppointmentRepository, InMemoryAppointmentRepository
+from .reminder_dispatcher import ReminderDispatcher
+
+from .repositories import (
+    AppointmentRepository,
+    InMemoryAppointmentRepository,
+    InMemorySentReminderRepository,
+    SentReminderRepository,
+)
 
 from .sqlalchemy_repository import SqlAlchemyAppointmentRepository
 
 from .catalog_repository import SqlAlchemyCatalogRepository
 
 from .availability_repository import SqlAlchemyAvailabilityRepository
+
+from .reminder_repository import SqlAlchemyReminderRepository
 
 from .database import configure as configure_database, get_engine, get_session_factory

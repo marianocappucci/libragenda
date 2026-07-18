@@ -2,18 +2,30 @@
 
 ## Implementados
 
-- `domain`: recursos, servicios, disponibilidad, turnos, estados, sucursales y clientes.
-- `scheduling`: solapamientos, bloqueos y excepciones.
-- `application`: crear, confirmar, cancelar y reprogramar.
-- `repositories`: interfaz de turnos + memoria.
-- `sqlalchemy_repository` / `catalog_repository`: PostgreSQL/SQLAlchemy.
+- `domain`: recursos, servicios, disponibilidad, turnos, estados, sucursales,
+  clientes, feriados (`Holiday`) y series (`Appointment.series_id`).
+- `scheduling`: solapamientos, bloqueos, excepciones, feriados por sucursal y
+  consistencia recurso-sucursal.
+- `timezones`: conversión explícita UTC ↔ hora local de sucursal (el motor
+  no infiere zonas horarias por su cuenta).
+- `recurrence`: `RecurrenceRule` + `generate_occurrences()`, generación pura
+  de ocurrencias semanales, desacoplada de `Appointment`.
+- `notifications`: `ReminderPolicy` + `due_reminders()` (regla pura de
+  vencimiento) + `NotificationPort` (puerto de envío, sin texto/canal —
+  eso es del consumidor).
+- `reminder_dispatcher`: conecta la regla de recordatorios con el puerto y
+  el ledger de enviados (`SentReminderRepository`), evitando reenvíos.
+- `application`: crear, confirmar, cancelar, reprogramar, y operar sobre
+  series completas (`list_series`/`cancel_series`).
+- `repositories`: interfaz de turnos + memoria; interfaz de recordatorios
+  enviados + memoria.
+- `sqlalchemy_repository` / `catalog_repository` / `availability_repository`
+  / `reminder_repository`: PostgreSQL/SQLAlchemy.
 - `database`: configuración de engine/session factory.
 
 ## Próximos
 
-- `notifications`: recordatorios y confirmaciones; solo puerto de envío al inicio.
 - `payments`: señas/anticipos como puerto, sin lógica de proveedor.
-- `recurrences`: generación de ocurrencias, sin mezclarla con `Appointment`.
 
 ## Fuera del motor
 

@@ -10,6 +10,7 @@ def test_full_schema_has_core_tables_and_foreign_keys():
     assert set(inspector.get_table_names()) == {
         "branches", "clients", "resources", "services", "availability",
         "time_blocks", "availability_exceptions", "appointments", "holidays",
+        "sent_reminders",
     }
     foreign_keys = inspector.get_foreign_keys("appointments")
     assert {(item["constrained_columns"][0], item["referred_table"]) for item in foreign_keys} == {

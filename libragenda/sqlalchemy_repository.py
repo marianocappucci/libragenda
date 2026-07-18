@@ -2,7 +2,10 @@
 
 from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, Time, create_engine, select
+from sqlalchemy import (
+    Date, DateTime, ForeignKey, Integer, String, Text, Time, UniqueConstraint,
+    create_engine, select,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from .domain import Appointment, AppointmentStatus
@@ -103,6 +106,16 @@ class AppointmentRow(Base):
         ForeignKey("branches.id"), nullable=True, index=True
     )
     series_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+
+
+class SentReminderRow(Base):
+    __tablename__ = "sent_reminders"
+    __table_args__ = (UniqueConstraint("appointment_id", "policy_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    appointment_id: Mapped[str] = mapped_column(ForeignKey("appointments.id"), index=True)
+    policy_id: Mapped[str] = mapped_column(String(100))
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class SqlAlchemyAppointmentRepository:
