@@ -18,6 +18,15 @@ producción y SQLite en tests. El esquema mínimo actual contiene la tabla
 `appointments`; el repositorio recibe una `sessionmaker` y los casos de uso
 continúan sin conocer SQLAlchemy.
 
+## Documentación
+
+- [ROADMAP.md](ROADMAP.md) — dirección estratégica.
+- [TASKS.md](TASKS.md) — trabajo concreto vigente.
+- [ARCHITECTURE.md](ARCHITECTURE.md) — arquitectura actual.
+- [CONVENTIONS.md](CONVENTIONS.md) — estándares del código.
+- [DECISIONS.md](DECISIONS.md) — decisiones y motivos.
+- [CHANGELOG.md](CHANGELOG.md) — releases publicados.
+
 ## Desarrollo
 
 ```bash
