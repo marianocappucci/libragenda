@@ -5,14 +5,14 @@
 Scaffold, empaquetado, dominio inicial, reglas, casos de uso, repositorios,
 PostgreSQL, Alembic, Docker y tag `v0.1.0`.
 
-## Fase 1 — endurecimiento del motor (siguiente)
+## Fase 1 — endurecimiento del motor (completa)
 
 - Repositorios CRUD completos para disponibilidad, bloqueos y excepciones.
 - Tests de migración contra PostgreSQL.
-- Reglas de timezone, feriados y límites de sucursal.
+- Reglas de timezone por sucursal, feriados y consistencia recurso-sucursal.
 - CI para push/tag.
 
-## Fase 2 — capacidades de agenda
+## Fase 2 — capacidades de agenda (siguiente)
 
 - Recurrencias.
 - Recordatorios mediante puerto de notificaciones.
