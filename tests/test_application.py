@@ -11,8 +11,10 @@ from libragenda import (
     Holiday,
     InMemoryScheduler,
     InvalidTransition,
+    RecurrenceRule,
     Resource,
     ResourceBranchMismatch,
+    generate_occurrences,
 )
 
 
@@ -94,3 +96,40 @@ def test_reschedule_preserves_branch_id_and_still_enforces_it():
     scheduler.create(make_appointment(branch_id="branch-1"))
     moved = scheduler.reschedule("apt-1", datetime(2026, 7, 20, 12))
     assert moved.branch_id == "branch-1"
+
+
+def _create_series(scheduler: InMemoryScheduler, series_id: str, count: int) -> list[Appointment]:
+    rule = RecurrenceRule(weekdays=frozenset({0}), start_time=time(10, 0),
+                          starts_on=date(2026, 7, 20), count=count)
+    created = []
+    for index, occurrence in enumerate(generate_occurrences(rule)):
+        appointment = Appointment(
+            f"apt-{index}", "resource-1", "service-1", "client-1",
+            occurrence, timedelta(minutes=45), series_id=series_id,
+        )
+        created.append(scheduler.create(appointment))
+    return created
+
+
+def test_list_series_returns_only_matching_occurrences(scheduler):
+    _create_series(scheduler, "series-1", count=3)
+    scheduler.create(make_appointment("standalone", hour=14))
+    assert len(scheduler.list_series("series-1")) == 3
+
+
+def test_cancel_series_cancels_every_pending_occurrence(scheduler):
+    _create_series(scheduler, "series-1", count=3)
+    cancelled = scheduler.cancel_series("series-1")
+    assert len(cancelled) == 3
+    assert all(item.status is AppointmentStatus.CANCELLED for item in cancelled)
+
+
+def test_cancel_series_skips_occurrences_already_closed_out(scheduler):
+    occurrences = _create_series(scheduler, "series-1", count=2)
+    scheduler.confirm(occurrences[0].id)
+    scheduler.cancel(occurrences[0].id)  # already cancelled
+
+    cancelled = scheduler.cancel_series("series-1")
+
+    assert len(cancelled) == 1
+    assert cancelled[0].id == occurrences[1].id

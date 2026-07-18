@@ -102,6 +102,7 @@ class AppointmentRow(Base):
     branch_id: Mapped[str | None] = mapped_column(
         ForeignKey("branches.id"), nullable=True, index=True
     )
+    series_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
 
 
 class SqlAlchemyAppointmentRepository:
@@ -145,6 +146,7 @@ class SqlAlchemyAppointmentRepository:
             starts_at=appointment.starts_at,
             duration_seconds=int(appointment.duration.total_seconds()),
             status=appointment.status.value, branch_id=appointment.branch_id,
+            series_id=appointment.series_id,
         )
 
     @staticmethod
@@ -156,6 +158,7 @@ class SqlAlchemyAppointmentRepository:
         row.duration_seconds = int(appointment.duration.total_seconds())
         row.status = appointment.status.value
         row.branch_id = appointment.branch_id
+        row.series_id = appointment.series_id
 
     @staticmethod
     def _to_domain(row: AppointmentRow) -> Appointment:
@@ -164,4 +167,5 @@ class SqlAlchemyAppointmentRepository:
             client_id=row.client_id, starts_at=row.starts_at,
             duration=timedelta(seconds=row.duration_seconds),
             status=AppointmentStatus(row.status), branch_id=row.branch_id,
+            series_id=row.series_id,
         )

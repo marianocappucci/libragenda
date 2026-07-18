@@ -83,6 +83,6 @@ def test_revision_chain_is_linear_and_reaches_head():
     script = ScriptDirectory.from_config(cfg)
     revisions = list(script.walk_revisions())
     assert [rev.revision for rev in revisions] == [
-        "0003_timezone_holidays", "0002_entities", "0001_initial",
+        "0004_appointment_series", "0003_timezone_holidays", "0002_entities", "0001_initial",
     ]
-    assert script.get_current_head() == "0003_timezone_holidays"
+    assert script.get_current_head() == "0004_appointment_series"

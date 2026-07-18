@@ -36,6 +36,8 @@ from .scheduling import AvailabilityException, BranchMismatch, TimeBlock, check_
 
 from .timezones import to_branch_local, to_utc, validate_timezone
 
+from .recurrence import RecurrenceRule, generate_occurrences
+
 from .application import (
     AppointmentConflict,
     AppointmentNotFound,

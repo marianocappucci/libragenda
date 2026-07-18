@@ -93,6 +93,10 @@ class Appointment:
     """Branch the appointment was booked through, when the vertical scopes
     appointments by branch. Optional: engines that never assign resources to
     branches can leave this unset."""
+    series_id: str | None = None
+    """Groups the occurrences generated from one RecurrenceRule. Optional:
+    the recurrence engine only produces datetimes, it never assigns this —
+    the caller decides whether and how to link occurrences together."""
 
     def __post_init__(self) -> None:
         if not self.id.strip():
@@ -104,6 +108,8 @@ class Appointment:
             raise ValueError("appointment duration must be positive")
         if self.branch_id is not None and not self.branch_id.strip():
             raise ValueError("branch_id cannot be blank when provided")
+        if self.series_id is not None and not self.series_id.strip():
+            raise ValueError("series_id cannot be blank when provided")
 
     @property
     def ends_at(self) -> datetime:

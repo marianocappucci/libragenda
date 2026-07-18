@@ -18,8 +18,9 @@ def test_sqlalchemy_repository_round_trips_appointments():
     assert repository.get("apt-1") == appointment
     updated = Appointment("apt-1", "resource-1", "service-1", "client-1",
                            appointment.starts_at, appointment.duration, AppointmentStatus.CONFIRMED,
-                           branch_id="branch-1")
+                           branch_id="branch-1", series_id="series-1")
     repository.save(updated)
     assert repository.get("apt-1") == updated
     assert repository.get("apt-1").branch_id == "branch-1"
+    assert repository.get("apt-1").series_id == "series-1"
     assert repository.list() == (updated,)

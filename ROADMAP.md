@@ -12,10 +12,13 @@ PostgreSQL, Alembic, Docker y tag `v0.1.0`.
 - Reglas de timezone por sucursal, feriados y consistencia recurso-sucursal.
 - CI para push/tag.
 
-## Fase 2 — capacidades de agenda (siguiente)
+## Fase 2 — capacidades de agenda (en curso)
 
-- Recurrencias.
-- Recordatorios mediante puerto de notificaciones.
+- Recurrencias (completo). `RecurrenceRule` + `generate_occurrences()`
+  semanal-en-días-fijos, desacoplado de `Appointment` (solo genera
+  datetimes). `Appointment.series_id` opcional agrupa las ocurrencias;
+  `InMemoryScheduler.list_series()`/`cancel_series()` operan sobre el grupo.
+- Recordatorios mediante puerto de notificaciones (siguiente).
 - Señás mediante puerto de pagos.
 
 ## Fase 3 — consumo vertical

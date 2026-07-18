@@ -50,12 +50,21 @@ def test_appointment_branch_id_is_optional_but_not_blank_when_given():
     assert with_branch.branch_id == "branch-1"
 
 
+def test_appointment_series_id_is_optional_but_not_blank_when_given():
+    occurrence = Appointment(
+        "apt", "resource", "svc", "client", datetime.now(), timedelta(minutes=1),
+        series_id="series-1",
+    )
+    assert occurrence.series_id == "series-1"
+
+
 @pytest.mark.parametrize("factory", [
     lambda: Resource("", "Profesional"),
     lambda: Service("svc", "Corte", timedelta(0)),
     lambda: Availability("resource", 7, time(9), time(18)),
     lambda: Appointment("apt", "resource", "svc", "client", datetime.now(), timedelta(0)),
     lambda: Appointment("apt", "resource", "svc", "client", datetime.now(), timedelta(minutes=1), branch_id="  "),
+    lambda: Appointment("apt", "resource", "svc", "client", datetime.now(), timedelta(minutes=1), series_id="  "),
     lambda: Branch("branch", "Centro", timezone="Not/A_Zone"),
     lambda: Holiday("", date(2026, 12, 25), "Navidad"),
     lambda: Holiday("branch-1", date(2026, 12, 25), ""),
