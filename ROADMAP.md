@@ -12,7 +12,7 @@ PostgreSQL, Alembic, Docker y tag `v0.1.0`.
 - Reglas de timezone por sucursal, feriados y consistencia recurso-sucursal.
 - CI para push/tag.
 
-## Fase 2 — capacidades de agenda (en curso)
+## Fase 2 — capacidades de agenda (completa)
 
 - Recurrencias (completo). `RecurrenceRule` + `generate_occurrences()`
   semanal-en-días-fijos, desacoplado de `Appointment` (solo genera
@@ -24,7 +24,14 @@ PostgreSQL, Alembic, Docker y tag `v0.1.0`.
   consumidor). `ReminderDispatcher` conecta la regla con el puerto y el
   ledger de enviados (`sent_reminders`, con unique constraint) para no
   reenviar. Persistencia SQL + versión en memoria.
-- Señás mediante puerto de pagos (siguiente).
+- Señas mediante puerto de pagos (completo). `Deposit`/`DepositStatus` (una
+  seña por turno, monto lo decide el llamador, no un % configurado en
+  `Service`) + `PaymentPort` (cobro/reembolso, sin lógica de proveedor).
+  `DepositManager` valida transiciones (pending→paid/failed, paid→refunded)
+  y llama al puerto antes de persistir. **Sin gating**: el motor no bloquea
+  `confirm()` por seña impaga — cada vertical decide su propia política.
+  Persistencia SQL (`deposits`, unique constraint en `appointment_id`) +
+  versión en memoria.
 
 ## Fase 3 — consumo vertical
 

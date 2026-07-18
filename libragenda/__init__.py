@@ -45,6 +45,8 @@ from .notifications import (
     due_reminders,
 )
 
+from .payments import Deposit, DepositStatus, PaymentPort
+
 from .application import (
     AppointmentConflict,
     AppointmentNotFound,
@@ -56,9 +58,18 @@ from .application import (
 
 from .reminder_dispatcher import ReminderDispatcher
 
+from .deposit_manager import (
+    DepositError,
+    DepositManager,
+    DepositNotFound,
+    InvalidDepositTransition,
+)
+
 from .repositories import (
     AppointmentRepository,
+    DepositRepository,
     InMemoryAppointmentRepository,
+    InMemoryDepositRepository,
     InMemorySentReminderRepository,
     SentReminderRepository,
 )
@@ -70,5 +81,7 @@ from .catalog_repository import SqlAlchemyCatalogRepository
 from .availability_repository import SqlAlchemyAvailabilityRepository
 
 from .reminder_repository import SqlAlchemyReminderRepository
+
+from .deposit_repository import SqlAlchemyDepositRepository
 
 from .database import configure as configure_database, get_engine, get_session_factory

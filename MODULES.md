@@ -15,17 +15,23 @@
   eso es del consumidor).
 - `reminder_dispatcher`: conecta la regla de recordatorios con el puerto y
   el ledger de enviados (`SentReminderRepository`), evitando reenvíos.
+- `payments`: `Deposit`/`DepositStatus` (una seña por turno, monto lo decide
+  el llamador) + `PaymentPort` (puerto de cobro/reembolso, sin lógica de
+  proveedor). `DepositManager` valida las transiciones (pending→paid/failed,
+  paid→refunded) y llama al puerto antes de persistir. El motor **no**
+  bloquea `Appointment.confirm()` por seña impaga — es tracking separado;
+  cada vertical decide su propia política de gating.
 - `application`: crear, confirmar, cancelar, reprogramar, y operar sobre
   series completas (`list_series`/`cancel_series`).
 - `repositories`: interfaz de turnos + memoria; interfaz de recordatorios
-  enviados + memoria.
+  enviados + memoria; interfaz de depósitos + memoria.
 - `sqlalchemy_repository` / `catalog_repository` / `availability_repository`
-  / `reminder_repository`: PostgreSQL/SQLAlchemy.
+  / `reminder_repository` / `deposit_repository`: PostgreSQL/SQLAlchemy.
 - `database`: configuración de engine/session factory.
 
 ## Próximos
 
-- `payments`: señas/anticipos como puerto, sin lógica de proveedor.
+Sin ítems pendientes de Fase 2 (ver `ROADMAP.md`).
 
 ## Fuera del motor
 

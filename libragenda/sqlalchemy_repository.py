@@ -1,9 +1,10 @@
 """SQLAlchemy persistence adapter for appointments."""
 
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 
 from sqlalchemy import (
-    Date, DateTime, ForeignKey, Integer, String, Text, Time, UniqueConstraint,
+    Date, DateTime, ForeignKey, Integer, Numeric, String, Text, Time, UniqueConstraint,
     create_engine, select,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
@@ -116,6 +117,17 @@ class SentReminderRow(Base):
     appointment_id: Mapped[str] = mapped_column(ForeignKey("appointments.id"), index=True)
     policy_id: Mapped[str] = mapped_column(String(100))
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class DepositRow(Base):
+    __tablename__ = "deposits"
+
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    appointment_id: Mapped[str] = mapped_column(
+        ForeignKey("appointments.id"), unique=True, index=True
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    status: Mapped[str] = mapped_column(String(30), index=True)
 
 
 class SqlAlchemyAppointmentRepository:

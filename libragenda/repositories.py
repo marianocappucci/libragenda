@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Protocol
 
 from .domain import Appointment
+from .payments import Deposit
 
 
 class AppointmentRepository(Protocol):
@@ -62,3 +63,43 @@ class InMemorySentReminderRepository:
 
     def mark_sent(self, appointment_id: str, policy_id: str, sent_at: datetime) -> None:
         self._sent.add((appointment_id, policy_id))
+
+
+class DepositRepository(Protocol):
+    """Port for the at-most-one-deposit-per-appointment ledger."""
+
+    def add(self, deposit: Deposit) -> None: ...
+
+    def get(self, deposit_id: str) -> Deposit | None: ...
+
+    def get_by_appointment(self, appointment_id: str) -> Deposit | None: ...
+
+    def save(self, deposit: Deposit) -> None: ...
+
+
+class InMemoryDepositRepository:
+    """Reference adapter for tests and local development."""
+
+    def __init__(self) -> None:
+        self._items: dict[str, Deposit] = {}
+
+    def add(self, deposit: Deposit) -> None:
+        if deposit.id in self._items:
+            raise ValueError(f"deposit already exists: {deposit.id}")
+        if self.get_by_appointment(deposit.appointment_id) is not None:
+            raise ValueError(f"appointment already has a deposit: {deposit.appointment_id}")
+        self._items[deposit.id] = deposit
+
+    def get(self, deposit_id: str) -> Deposit | None:
+        return self._items.get(deposit_id)
+
+    def get_by_appointment(self, appointment_id: str) -> Deposit | None:
+        return next(
+            (item for item in self._items.values() if item.appointment_id == appointment_id),
+            None,
+        )
+
+    def save(self, deposit: Deposit) -> None:
+        if deposit.id not in self._items:
+            raise KeyError(deposit.id)
+        self._items[deposit.id] = deposit
