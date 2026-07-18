@@ -45,3 +45,5 @@ from .repositories import AppointmentRepository, InMemoryAppointmentRepository
 from .sqlalchemy_repository import SqlAlchemyAppointmentRepository
 
 from .catalog_repository import SqlAlchemyCatalogRepository
+
+from .database import configure as configure_database, get_engine, get_session_factory
