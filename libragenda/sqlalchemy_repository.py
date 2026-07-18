@@ -1,8 +1,8 @@
 """SQLAlchemy persistence adapter for appointments."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 
-from sqlalchemy import DateTime, Integer, String, create_engine, select
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Time, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from .domain import Appointment, AppointmentStatus
@@ -12,12 +12,40 @@ class Base(DeclarativeBase):
     pass
 
 
+class ResourceRow(Base):
+    __tablename__ = "resources"
+
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    branch_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    active: Mapped[bool] = mapped_column(default=True)
+
+
+class ServiceRow(Base):
+    __tablename__ = "services"
+
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    duration_seconds: Mapped[int] = mapped_column(Integer)
+    active: Mapped[bool] = mapped_column(default=True)
+
+
+class AvailabilityRow(Base):
+    __tablename__ = "availability"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    resource_id: Mapped[str] = mapped_column(ForeignKey("resources.id"), index=True)
+    weekday: Mapped[int] = mapped_column(Integer)
+    starts_at: Mapped[time] = mapped_column(Time)
+    ends_at: Mapped[time] = mapped_column(Time)
+
+
 class AppointmentRow(Base):
     __tablename__ = "appointments"
 
     id: Mapped[str] = mapped_column(String(100), primary_key=True)
-    resource_id: Mapped[str] = mapped_column(String(100), index=True)
-    service_id: Mapped[str] = mapped_column(String(100), index=True)
+    resource_id: Mapped[str] = mapped_column(ForeignKey("resources.id"), index=True)
+    service_id: Mapped[str] = mapped_column(ForeignKey("services.id"), index=True)
     client_id: Mapped[str] = mapped_column(String(100), index=True)
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     duration_seconds: Mapped[int] = mapped_column(Integer)
