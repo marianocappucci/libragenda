@@ -2,10 +2,12 @@ from datetime import date, datetime, time, timedelta
 
 import pytest
 
-from libragenda import Appointment, AppointmentStatus, Availability
+from libragenda import Appointment, AppointmentStatus, Availability, Holiday, Resource
 from libragenda.scheduling import (
     AvailabilityException,
+    BranchMismatch,
     TimeBlock,
+    check_resource_branch,
     find_conflicts,
     intervals_overlap,
     is_appointment_available,
@@ -65,3 +67,51 @@ def test_date_exception_can_close_or_open_a_window():
 def test_scheduling_rules_reject_invalid_intervals(factory):
     with pytest.raises(ValueError):
         factory()
+
+
+def test_branch_holiday_closes_resource_even_within_weekly_window():
+    target = appointment("target")
+    window = Availability("resource-1", 0, time(9), time(18))
+    resources = [Resource("resource-1", "Box 1", branch_id="branch-1")]
+    holidays = [Holiday("branch-1", date(2026, 7, 20), "Feriado")]
+    assert not is_appointment_available(target, [window], holidays=holidays, resources=resources)
+
+
+def test_resource_exception_overrides_a_branch_holiday():
+    target = appointment("target")
+    window = Availability("resource-1", 0, time(9), time(18))
+    resources = [Resource("resource-1", "Box 1", branch_id="branch-1")]
+    holidays = [Holiday("branch-1", date(2026, 7, 20), "Feriado")]
+    reopened = AvailabilityException("resource-1", date(2026, 7, 20), time(9), time(18), True)
+    assert is_appointment_available(
+        target, [window], holidays=holidays, resources=resources, exceptions=[reopened]
+    )
+
+
+def test_holiday_does_not_affect_a_resource_without_a_branch():
+    target = appointment("target")
+    window = Availability("resource-1", 0, time(9), time(18))
+    resources = [Resource("resource-1", "Box 1")]
+    holidays = [Holiday("branch-1", date(2026, 7, 20), "Feriado")]
+    assert is_appointment_available(target, [window], holidays=holidays, resources=resources)
+
+
+def test_check_resource_branch_is_noop_without_a_branch_scoped_appointment():
+    target = appointment("target")
+    check_resource_branch(target, Resource("resource-1", "Box 1", branch_id="other-branch"))
+
+
+def test_check_resource_branch_rejects_mismatched_branch():
+    scoped = Appointment("apt", "resource-1", "service-1", "client-1",
+                         datetime(2026, 7, 20, 10), timedelta(minutes=30),
+                         branch_id="branch-1")
+    with pytest.raises(BranchMismatch):
+        check_resource_branch(scoped, Resource("resource-1", "Box 1", branch_id="branch-2"))
+
+
+def test_check_resource_branch_rejects_resource_without_any_branch():
+    scoped = Appointment("apt", "resource-1", "service-1", "client-1",
+                         datetime(2026, 7, 20, 10), timedelta(minutes=30),
+                         branch_id="branch-1")
+    with pytest.raises(BranchMismatch):
+        check_resource_branch(scoped, Resource("resource-1", "Box 1"))

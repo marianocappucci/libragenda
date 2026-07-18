@@ -2,11 +2,13 @@
 
 from datetime import datetime
 
-from .domain import Appointment, AppointmentStatus, Availability
+from .domain import Appointment, AppointmentStatus, Availability, Holiday, Resource
 from .repositories import AppointmentRepository, InMemoryAppointmentRepository
 from .scheduling import (
     AvailabilityException,
+    BranchMismatch,
     TimeBlock,
+    check_resource_branch,
     find_conflicts,
     is_appointment_available,
 )
@@ -29,6 +31,10 @@ class AppointmentUnavailable(ScheduleError):
 
 
 class InvalidTransition(ScheduleError):
+    pass
+
+
+class ResourceBranchMismatch(ScheduleError):
     pass
 
 
@@ -55,11 +61,15 @@ class InMemoryScheduler:
         availability: list[Availability] | None = None,
         blocks: list[TimeBlock] | None = None,
         exceptions: list[AvailabilityException] | None = None,
+        holidays: list[Holiday] | None = None,
+        resources: list[Resource] | None = None,
         repository: AppointmentRepository | None = None,
     ) -> None:
         self.availability = availability or []
         self.blocks = blocks or []
         self.exceptions = exceptions or []
+        self.holidays = holidays or []
+        self.resources = resources or []
         self.repository = repository or InMemoryAppointmentRepository()
 
     def create(self, appointment: Appointment) -> Appointment:
@@ -91,7 +101,7 @@ class InMemoryScheduler:
         candidate = Appointment(
             id=current.id, resource_id=current.resource_id, service_id=current.service_id,
             client_id=current.client_id, starts_at=starts_at, duration=current.duration,
-            status=current.status,
+            status=current.status, branch_id=current.branch_id,
         )
         self._validate_slot(candidate, exclude_id=current.id)
         self.repository.save(candidate)
@@ -106,14 +116,23 @@ class InMemoryScheduler:
         updated = Appointment(
             id=current.id, resource_id=current.resource_id, service_id=current.service_id,
             client_id=current.client_id, starts_at=current.starts_at,
-            duration=current.duration, status=target,
+            duration=current.duration, status=target, branch_id=current.branch_id,
         )
         self.repository.save(updated)
         return updated
 
     def _validate_slot(self, appointment: Appointment, exclude_id: str | None = None) -> None:
+        resource = next(
+            (item for item in self.resources if item.id == appointment.resource_id), None
+        )
+        if resource is not None:
+            try:
+                check_resource_branch(appointment, resource)
+            except BranchMismatch as exc:
+                raise ResourceBranchMismatch(str(exc)) from exc
         if not is_appointment_available(
-            appointment, self.availability, self.blocks, self.exceptions
+            appointment, self.availability, self.blocks, self.exceptions,
+            self.holidays, self.resources,
         ):
             raise AppointmentUnavailable(appointment.id)
         existing = [item for item in self.repository.list() if item.id != exclude_id]

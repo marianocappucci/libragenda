@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from datetime import date, datetime, time
 
-from .domain import Appointment, Availability
+from .domain import Appointment, Availability, Holiday, Resource
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,10 +65,21 @@ def is_appointment_available(
     weekly_windows: list[Availability],
     blocks: list[TimeBlock] | None = None,
     exceptions: list[AvailabilityException] | None = None,
+    holidays: list[Holiday] | None = None,
+    resources: list[Resource] | None = None,
 ) -> bool:
-    """Check weekly availability, date exceptions and point-in-time blocks."""
+    """Check weekly availability, holidays, date exceptions and blocks.
+
+    A per-resource `AvailabilityException` always has the final say: it can
+    both close a resource that would otherwise be open (including on a
+    branch holiday) and reopen one that a holiday would otherwise close.
+    `holidays`/`resources` are optional; omit both to keep the previous
+    behaviour of resources with no branch or no holiday calendar.
+    """
     blocks = blocks or []
     exceptions = exceptions or []
+    holidays = holidays or []
+    resources = resources or []
     matching_exceptions = [
         exception for exception in exceptions
         if exception.resource_id == appointment.resource_id
@@ -78,6 +89,8 @@ def is_appointment_available(
     ]
     if matching_exceptions:
         available = matching_exceptions[-1].available
+    elif _is_branch_holiday(appointment, holidays, resources):
+        available = False
     else:
         available = any(
             window.resource_id == appointment.resource_id
@@ -94,3 +107,38 @@ def is_appointment_available(
         )
         for block in blocks
     )
+
+
+def _is_branch_holiday(
+    appointment: Appointment, holidays: list[Holiday], resources: list[Resource]
+) -> bool:
+    resource = next(
+        (item for item in resources if item.id == appointment.resource_id), None
+    )
+    if resource is None or resource.branch_id is None:
+        return False
+    day = appointment.starts_at.date()
+    return any(
+        holiday.branch_id == resource.branch_id and holiday.day == day
+        for holiday in holidays
+    )
+
+
+class BranchMismatch(ValueError):
+    """Raised when an appointment's resource does not belong to its branch."""
+
+
+def check_resource_branch(appointment: Appointment, resource: Resource) -> None:
+    """Validate that `resource` can serve an appointment scoped to a branch.
+
+    No-op if the appointment does not declare a branch. Otherwise the
+    resource must belong to that same branch — a resource with no branch at
+    all is rejected too, since it cannot honor a branch-scoped request.
+    """
+    if appointment.branch_id is None:
+        return
+    if resource.branch_id != appointment.branch_id:
+        raise BranchMismatch(
+            f"resource {resource.id} belongs to branch {resource.branch_id!r}, "
+            f"not {appointment.branch_id!r}"
+        )

@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from enum import StrEnum
 
+from .timezones import validate_timezone
+
 
 @dataclass(frozen=True, slots=True)
 class Resource:
@@ -87,6 +89,10 @@ class Appointment:
     starts_at: datetime
     duration: timedelta
     status: AppointmentStatus = AppointmentStatus.PENDING
+    branch_id: str | None = None
+    """Branch the appointment was booked through, when the vertical scopes
+    appointments by branch. Optional: engines that never assign resources to
+    branches can leave this unset."""
 
     def __post_init__(self) -> None:
         if not self.id.strip():
@@ -96,6 +102,8 @@ class Appointment:
                 raise ValueError(f"{field_name} cannot be empty")
         if self.duration <= timedelta(0):
             raise ValueError("appointment duration must be positive")
+        if self.branch_id is not None and not self.branch_id.strip():
+            raise ValueError("branch_id cannot be blank when provided")
 
     @property
     def ends_at(self) -> datetime:
@@ -110,10 +118,27 @@ class Branch:
     id: str
     name: str
     active: bool = True
+    timezone: str = "UTC"
 
     def __post_init__(self) -> None:
         if not self.id.strip() or not self.name.strip():
             raise ValueError("branch id and name cannot be empty")
+        validate_timezone(self.timezone)
+
+
+@dataclass(frozen=True, slots=True)
+class Holiday:
+    """A calendar exception shared by every resource of a branch."""
+
+    branch_id: str
+    day: date
+    name: str
+
+    def __post_init__(self) -> None:
+        if not self.branch_id.strip():
+            raise ValueError("holiday branch_id cannot be empty")
+        if not self.name.strip():
+            raise ValueError("holiday name cannot be empty")
 
 
 @dataclass(frozen=True, slots=True)

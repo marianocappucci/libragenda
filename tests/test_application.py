@@ -1,4 +1,4 @@
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 import pytest
 
@@ -8,14 +8,18 @@ from libragenda import (
     AppointmentStatus,
     AppointmentUnavailable,
     Availability,
+    Holiday,
     InMemoryScheduler,
     InvalidTransition,
+    Resource,
+    ResourceBranchMismatch,
 )
 
 
-def make_appointment(identifier="apt-1", hour=10, status=AppointmentStatus.PENDING):
+def make_appointment(identifier="apt-1", hour=10, status=AppointmentStatus.PENDING, branch_id=None):
     return Appointment(identifier, "resource-1", "service-1", "client-1",
-                       datetime(2026, 7, 20, hour), timedelta(minutes=45), status)
+                       datetime(2026, 7, 20, hour), timedelta(minutes=45), status,
+                       branch_id=branch_id)
 
 
 @pytest.fixture
@@ -61,3 +65,32 @@ def test_confirmed_appointment_cannot_be_confirmed_again(scheduler):
     scheduler.confirm("apt-1")
     with pytest.raises(InvalidTransition):
         scheduler.confirm("apt-1")
+
+
+def test_create_rejects_appointment_on_a_branch_holiday():
+    scheduler = InMemoryScheduler(
+        [Availability("resource-1", 0, time(9), time(18))],
+        holidays=[Holiday("branch-1", date(2026, 7, 20), "Feriado")],
+        resources=[Resource("resource-1", "Box 1", branch_id="branch-1")],
+    )
+    with pytest.raises(AppointmentUnavailable):
+        scheduler.create(make_appointment())
+
+
+def test_create_rejects_resource_from_a_different_branch():
+    scheduler = InMemoryScheduler(
+        [Availability("resource-1", 0, time(9), time(18))],
+        resources=[Resource("resource-1", "Box 1", branch_id="branch-2")],
+    )
+    with pytest.raises(ResourceBranchMismatch):
+        scheduler.create(make_appointment(branch_id="branch-1"))
+
+
+def test_reschedule_preserves_branch_id_and_still_enforces_it():
+    scheduler = InMemoryScheduler(
+        [Availability("resource-1", 0, time(9), time(18))],
+        resources=[Resource("resource-1", "Box 1", branch_id="branch-1")],
+    )
+    scheduler.create(make_appointment(branch_id="branch-1"))
+    moved = scheduler.reschedule("apt-1", datetime(2026, 7, 20, 12))
+    assert moved.branch_id == "branch-1"

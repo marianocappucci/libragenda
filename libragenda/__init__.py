@@ -18,6 +18,7 @@ from .domain import (
     Branch,
     Client,
     Availability,
+    Holiday,
     Resource,
     Service,
 )
@@ -26,11 +27,14 @@ __all__ = [
     "Appointment",
     "AppointmentStatus",
     "Availability",
+    "Holiday",
     "Resource",
     "Service",
 ]
 
-from .scheduling import AvailabilityException, TimeBlock
+from .scheduling import AvailabilityException, BranchMismatch, TimeBlock, check_resource_branch
+
+from .timezones import to_branch_local, to_utc, validate_timezone
 
 from .application import (
     AppointmentConflict,
@@ -38,6 +42,7 @@ from .application import (
     AppointmentUnavailable,
     InMemoryScheduler,
     InvalidTransition,
+    ResourceBranchMismatch,
 )
 
 from .repositories import AppointmentRepository, InMemoryAppointmentRepository

@@ -23,7 +23,8 @@ pytestmark = pytest.mark.skipif(
 
 EXPECTED_TABLES = {
     "branches", "clients", "resources", "services", "availability",
-    "time_blocks", "availability_exceptions", "appointments", "alembic_version",
+    "time_blocks", "availability_exceptions", "appointments", "holidays",
+    "alembic_version",
 }
 
 
@@ -57,7 +58,7 @@ def test_upgrade_head_creates_full_schema():
     foreign_keys = inspector.get_foreign_keys("appointments")
     assert {(item["constrained_columns"][0], item["referred_table"]) for item in foreign_keys} == {
         ("resource_id", "resources"), ("service_id", "services"),
-        ("client_id", "clients"),
+        ("client_id", "clients"), ("branch_id", "branches"),
     }
     engine.dispose()
 
@@ -81,5 +82,7 @@ def test_revision_chain_is_linear_and_reaches_head():
     cfg = _alembic_config()
     script = ScriptDirectory.from_config(cfg)
     revisions = list(script.walk_revisions())
-    assert [rev.revision for rev in revisions] == ["0002_entities", "0001_initial"]
-    assert script.get_current_head() == "0002_entities"
+    assert [rev.revision for rev in revisions] == [
+        "0003_timezone_holidays", "0002_entities", "0001_initial",
+    ]
+    assert script.get_current_head() == "0003_timezone_holidays"
