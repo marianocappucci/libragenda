@@ -24,6 +24,17 @@
 ## Configuración y deploy
 
 - Secretos solo por variables de entorno o archivos `.env` fuera de Git.
-- PostgreSQL dedicado por entorno.
+- PostgreSQL dedicado por entorno (una base + un usuario propio por
+  producto/entorno — nunca comparten schema con la base de LibraGenda ni
+  entre sí).
 - `alembic upgrade head` antes de iniciar el consumidor.
 - Versiones de LibraGenda por tags SemVer; consumidores pinean tags exactos.
+- **Las migraciones no viajan en el paquete pip.** `pyproject.toml` solo
+  empaqueta el paquete `libragenda/` (`[tool.hatch.build.targets.wheel]
+  packages = ["libragenda"]`); `migrations/` queda fuera del wheel. Un
+  consumidor que solo hace `pip install libragenda@vX.Y.Z` no tiene forma de
+  correr `alembic upgrade head` — necesita, además, un checkout del repo en
+  esa misma versión (tag) para acceder a `migrations/`. En dev esto se
+  resolvió sincronizando el checkout local al VPS y corriendo Alembic desde
+  ahí contra la base del consumidor; en producción falta decidir si el
+  deploy pipeline clona el repo aparte o si se agrega `migrations/` al wheel.
