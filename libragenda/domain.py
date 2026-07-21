@@ -97,6 +97,10 @@ class Appointment:
     """Groups the occurrences generated from one RecurrenceRule. Optional:
     the recurrence engine only produces datetimes, it never assigns this —
     the caller decides whether and how to link occurrences together."""
+    reason: str | None = None
+    """Free-text note for the last cancellation or reschedule, set by the
+    caller. The engine never requires, validates the content of, or enforces
+    a notice policy around it — that's vertical-specific business logic."""
 
     def __post_init__(self) -> None:
         if not self.id.strip():
@@ -110,6 +114,8 @@ class Appointment:
             raise ValueError("branch_id cannot be blank when provided")
         if self.series_id is not None and not self.series_id.strip():
             raise ValueError("series_id cannot be blank when provided")
+        if self.reason is not None and not self.reason.strip():
+            raise ValueError("reason cannot be blank when provided")
 
     @property
     def ends_at(self) -> datetime:

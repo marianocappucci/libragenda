@@ -62,6 +62,20 @@ def test_cancelled_appointment_cannot_be_rescheduled_or_confirmed(scheduler):
         scheduler.confirm("apt-1")
 
 
+def test_cancel_accepts_an_optional_reason(scheduler):
+    scheduler.create(make_appointment())
+    cancelled = scheduler.cancel("apt-1", reason="cliente no puede asistir")
+    assert cancelled.reason == "cliente no puede asistir"
+
+
+def test_reschedule_accepts_an_optional_reason_and_preserves_it_if_omitted(scheduler):
+    scheduler.create(make_appointment())
+    moved = scheduler.reschedule("apt-1", datetime(2026, 7, 20, 12), reason="pidio otro horario")
+    assert moved.reason == "pidio otro horario"
+    moved_again = scheduler.reschedule("apt-1", datetime(2026, 7, 20, 13))
+    assert moved_again.reason == "pidio otro horario"
+
+
 def test_confirmed_appointment_cannot_be_confirmed_again(scheduler):
     scheduler.create(make_appointment())
     scheduler.confirm("apt-1")
@@ -122,6 +136,12 @@ def test_cancel_series_cancels_every_pending_occurrence(scheduler):
     cancelled = scheduler.cancel_series("series-1")
     assert len(cancelled) == 3
     assert all(item.status is AppointmentStatus.CANCELLED for item in cancelled)
+
+
+def test_cancel_series_applies_the_same_reason_to_every_occurrence(scheduler):
+    _create_series(scheduler, "series-1", count=2)
+    cancelled = scheduler.cancel_series("series-1", reason="profesional de licencia")
+    assert all(item.reason == "profesional de licencia" for item in cancelled)
 
 
 def test_cancel_series_skips_occurrences_already_closed_out(scheduler):

@@ -22,7 +22,11 @@
   bloquea `Appointment.confirm()` por seña impaga — es tracking separado;
   cada vertical decide su propia política de gating.
 - `application`: crear, confirmar, cancelar, reprogramar, y operar sobre
-  series completas (`list_series`/`cancel_series`).
+  series completas (`list_series`/`cancel_series`). `cancel`/`reschedule`/
+  `cancel_series` aceptan un `reason: str | None` opcional (motivo de
+  cancelación o reprogramación); el motor no lo valida más allá de "no
+  vacío si se da" ni aplica política de anticipación — eso es decisión de
+  cada vertical.
 - `repositories`: interfaz de turnos + memoria; interfaz de recordatorios
   enviados + memoria; interfaz de depósitos + memoria.
 - `sqlalchemy_repository` / `catalog_repository` / `availability_repository`

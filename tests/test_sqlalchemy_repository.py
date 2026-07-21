@@ -27,3 +27,9 @@ def test_sqlalchemy_repository_round_trips_appointments():
     assert repository.get("apt-1").branch_id == "branch-1"
     assert repository.get("apt-1").series_id == "series-1"
     assert repository.list() == (updated,)
+
+    cancelled = Appointment("apt-1", "resource-1", "service-1", "client-1",
+                             appointment.starts_at, appointment.duration, AppointmentStatus.CANCELLED,
+                             branch_id="branch-1", series_id="series-1", reason="cliente no puede asistir")
+    repository.save(cancelled)
+    assert repository.get("apt-1").reason == "cliente no puede asistir"

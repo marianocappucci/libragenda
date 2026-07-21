@@ -91,13 +91,13 @@ class InMemoryScheduler:
     def confirm(self, appointment_id: str) -> Appointment:
         return self._transition(appointment_id, AppointmentStatus.CONFIRMED)
 
-    def cancel(self, appointment_id: str) -> Appointment:
-        return self._transition(appointment_id, AppointmentStatus.CANCELLED)
+    def cancel(self, appointment_id: str, reason: str | None = None) -> Appointment:
+        return self._transition(appointment_id, AppointmentStatus.CANCELLED, reason=reason)
 
     def list_series(self, series_id: str) -> list[Appointment]:
         return [item for item in self.repository.list() if item.series_id == series_id]
 
-    def cancel_series(self, series_id: str) -> list[Appointment]:
+    def cancel_series(self, series_id: str, reason: str | None = None) -> list[Appointment]:
         """Cancel every still-cancellable occurrence of a series.
 
         Occurrences already completed, cancelled or marked no-show are left
@@ -107,10 +107,12 @@ class InMemoryScheduler:
         cancelled = []
         for occurrence in self.list_series(series_id):
             if AppointmentStatus.CANCELLED in _ALLOWED_TRANSITIONS[occurrence.status]:
-                cancelled.append(self.cancel(occurrence.id))
+                cancelled.append(self.cancel(occurrence.id, reason=reason))
         return cancelled
 
-    def reschedule(self, appointment_id: str, starts_at: datetime) -> Appointment:
+    def reschedule(
+        self, appointment_id: str, starts_at: datetime, reason: str | None = None
+    ) -> Appointment:
         current = self.get(appointment_id)
         if current.status not in {AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED}:
             raise InvalidTransition(f"cannot reschedule {current.status.value} appointment")
@@ -118,12 +120,15 @@ class InMemoryScheduler:
             id=current.id, resource_id=current.resource_id, service_id=current.service_id,
             client_id=current.client_id, starts_at=starts_at, duration=current.duration,
             status=current.status, branch_id=current.branch_id, series_id=current.series_id,
+            reason=reason if reason is not None else current.reason,
         )
         self._validate_slot(candidate, exclude_id=current.id)
         self.repository.save(candidate)
         return candidate
 
-    def _transition(self, appointment_id: str, target: AppointmentStatus) -> Appointment:
+    def _transition(
+        self, appointment_id: str, target: AppointmentStatus, reason: str | None = None
+    ) -> Appointment:
         current = self.get(appointment_id)
         if target not in _ALLOWED_TRANSITIONS[current.status]:
             raise InvalidTransition(
@@ -134,6 +139,7 @@ class InMemoryScheduler:
             client_id=current.client_id, starts_at=current.starts_at,
             duration=current.duration, status=target, branch_id=current.branch_id,
             series_id=current.series_id,
+            reason=reason if reason is not None else current.reason,
         )
         self.repository.save(updated)
         return updated

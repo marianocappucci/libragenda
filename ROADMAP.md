@@ -63,3 +63,12 @@ PostgreSQL, Alembic, Docker y tag `v0.1.0`.
   fix de datetimes cross-dialecto) que se corrigieron en `v0.4.1`/`v0.4.2`
   — exactamente el tipo de hallazgo que esta fase buscaba sacar a la luz.
   `v0.4.2` es el tag estable que cierra la fase.
+
+## Post-Fase 3 — motivo de cancelación/reprogramación (completo)
+
+Gestiolibra (en curso) y MedLibra (próxima) tenían de forma independiente
+"cancelar y reprogramar turnos con motivos" en su propio roadmap — señal de
+que era mejor resolverlo una vez en el motor que dejar que cada vertical
+inventara su propia tabla lateral. `Appointment.reason` (opcional, sin
+validar contenido ni política de anticipación) + `cancel()`/`reschedule()`/
+`cancel_series()` aceptan `reason`. Migración `0007_appointment_reason`.

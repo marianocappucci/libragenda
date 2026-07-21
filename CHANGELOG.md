@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## v0.5.0 — 2026-07-21
+
+- Motivo opcional (`reason`) en `cancel()`, `reschedule()` y `cancel_series()`,
+  persistido en `appointments.reason` (migración `0007_appointment_reason`).
 - Normalización documental al estándar híbrido por producto.
 
 ## v0.4.2 — 2026-07-18

@@ -120,6 +120,7 @@ class AppointmentRow(Base):
         ForeignKey("branches.id"), nullable=True, index=True
     )
     series_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class SentReminderRow(Base):
@@ -184,7 +185,7 @@ class SqlAlchemyAppointmentRepository:
             starts_at=appointment.starts_at,
             duration_seconds=int(appointment.duration.total_seconds()),
             status=appointment.status.value, branch_id=appointment.branch_id,
-            series_id=appointment.series_id,
+            series_id=appointment.series_id, reason=appointment.reason,
         )
 
     @staticmethod
@@ -197,6 +198,7 @@ class SqlAlchemyAppointmentRepository:
         row.status = appointment.status.value
         row.branch_id = appointment.branch_id
         row.series_id = appointment.series_id
+        row.reason = appointment.reason
 
     @staticmethod
     def _to_domain(row: AppointmentRow) -> Appointment:
@@ -205,5 +207,5 @@ class SqlAlchemyAppointmentRepository:
             client_id=row.client_id, starts_at=ensure_utc(row.starts_at),
             duration=timedelta(seconds=row.duration_seconds),
             status=AppointmentStatus(row.status), branch_id=row.branch_id,
-            series_id=row.series_id,
+            series_id=row.series_id, reason=row.reason,
         )

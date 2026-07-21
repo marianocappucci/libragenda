@@ -58,6 +58,14 @@ def test_appointment_series_id_is_optional_but_not_blank_when_given():
     assert occurrence.series_id == "series-1"
 
 
+def test_appointment_reason_is_optional_but_not_blank_when_given():
+    cancelled = Appointment(
+        "apt", "resource", "svc", "client", datetime.now(), timedelta(minutes=1),
+        reason="cliente no puede asistir",
+    )
+    assert cancelled.reason == "cliente no puede asistir"
+
+
 @pytest.mark.parametrize("factory", [
     lambda: Resource("", "Profesional"),
     lambda: Service("svc", "Corte", timedelta(0)),
@@ -65,6 +73,7 @@ def test_appointment_series_id_is_optional_but_not_blank_when_given():
     lambda: Appointment("apt", "resource", "svc", "client", datetime.now(), timedelta(0)),
     lambda: Appointment("apt", "resource", "svc", "client", datetime.now(), timedelta(minutes=1), branch_id="  "),
     lambda: Appointment("apt", "resource", "svc", "client", datetime.now(), timedelta(minutes=1), series_id="  "),
+    lambda: Appointment("apt", "resource", "svc", "client", datetime.now(), timedelta(minutes=1), reason="  "),
     lambda: Branch("branch", "Centro", timezone="Not/A_Zone"),
     lambda: Holiday("", date(2026, 12, 25), "Navidad"),
     lambda: Holiday("branch-1", date(2026, 12, 25), ""),
