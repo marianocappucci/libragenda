@@ -33,7 +33,7 @@ PostgreSQL, Alembic, Docker y tag `v0.1.0`.
   Persistencia SQL (`deposits`, unique constraint en `appointment_id`) +
   versión en memoria.
 
-## Fase 3 — consumo vertical (en curso)
+## Fase 3 — consumo vertical (completa)
 
 - Gestiolibra usa LibraGenda en un entorno dev real (completo). Pin
   actualizado a `v0.3.0`, base `gestiolibra` dedicada (Postgres 16 del VPS
@@ -57,4 +57,9 @@ PostgreSQL, Alembic, Docker y tag `v0.1.0`.
   verificada end-to-end con los repositorios SQLAlchemy reales. Prueba que
   dos consumidores verticales distintos (turnos genéricos vs. salud) usan
   el mismo motor sin que LibraGenda necesite saber cuál es cuál.
-- Tag estable posterior a la primera integración real.
+- Tag estable posterior a la primera integración real (completo). `v0.4.0`
+  cerró la integración inicial; el consumo real en Gestiolibra/MedLibra
+  siguió encontrando gaps genuinos (CRUD faltante en el catálogo maestro,
+  fix de datetimes cross-dialecto) que se corrigieron en `v0.4.1`/`v0.4.2`
+  — exactamente el tipo de hallazgo que esta fase buscaba sacar a la luz.
+  `v0.4.2` es el tag estable que cierra la fase.
