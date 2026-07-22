@@ -18,7 +18,14 @@ El motor no incluye lógica clínica, gastronómica ni de facturación, y actual
 
 ## Persistencia
 
-PostgreSQL es el destino de producción. SQLite se usa en tests. Cada producto y entorno tiene base y usuario propios; no se comparte schema entre consumidores.
+**SQLite es el destino de producción por defecto** para toda la familia
+Libra (silo: una instancia/base aislada por cliente, ver `DECISIONS.md`
+ADR-005), y también el motor usado en tests. PostgreSQL sigue soportado
+vía la misma `configure(url)` para el caso puntual que lo amerite. Cada
+producto y entorno tiene base propia; no se comparte schema entre
+consumidores. `configure()` activa `PRAGMA foreign_keys=ON`
+automáticamente en cualquier conexión SQLite — sin esto la integridad
+referencial no se fuerza y las violaciones fallan en silencio.
 
 Las migraciones no viajan en el wheel: el pipeline del consumidor clona LibraGenda en `LIBRAGENDA_REF`, instala el paquete y ejecuta `alembic upgrade head` antes de iniciar la API del consumidor.
 

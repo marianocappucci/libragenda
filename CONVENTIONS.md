@@ -24,9 +24,15 @@
 ## Configuración y deploy
 
 - Secretos solo por variables de entorno o archivos `.env` fuera de Git.
-- PostgreSQL dedicado por entorno (una base + un usuario propio por
-  producto/entorno — nunca comparten schema con la base de LibraGenda ni
-  entre sí).
+- **SQLite por defecto** para toda la familia Libra (silo: una instancia
+  aislada por cliente, mismo patrón que Contalibra/Restolibra), a menos
+  que el producto amerite otra cosa — ver `DECISIONS.md` ADR-005.
+  `configure(url)` activa `PRAGMA foreign_keys=ON` automáticamente para
+  cualquier URL `sqlite:///`, ya sea en memoria o archivo — SQLite no
+  fuerza integridad referencial por default. PostgreSQL sigue siendo una
+  opción soportada vía la misma `configure(url)`, para el caso puntual
+  que lo justifique; cuando se use, una base + un usuario propio por
+  producto/entorno, nunca schema compartido.
 - `alembic upgrade head` antes de iniciar el consumidor.
 - Versiones de LibraGenda por tags SemVer; consumidores pinean tags exactos.
 - **Las migraciones no viajan en el paquete pip.** `pyproject.toml` solo

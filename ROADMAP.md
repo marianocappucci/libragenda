@@ -72,3 +72,19 @@ que era mejor resolverlo una vez en el motor que dejar que cada vertical
 inventara su propia tabla lateral. `Appointment.reason` (opcional, sin
 validar contenido ni política de anticipación) + `cancel()`/`reschedule()`/
 `cancel_series()` aceptan `reason`. Migración `0007_appointment_reason`.
+
+## Post-Fase 3 — SQLite por defecto para toda la familia (completo)
+
+Surgió al scopear si MedLibra debía componer LibraCore para facturación:
+Contalibra/Restolibra despliegan con arquitectura silo real (instancia +
+base SQLite aislada por cliente) y Gestiolibra/MedLibra ya prevén el
+mismo patrón — mantener estos dos en Postgres no aportaba nada y
+complicaba cualquier composición futura con LibraCore (SQLite-only, sin
+capa de abstracción). Decisión del usuario: SQLite pasa a ser el default
+documentado de toda la familia (Postgres sigue soportado, no obligatorio).
+`configure()` activa `PRAGMA foreign_keys=ON` para toda conexión SQLite
+(antes solo se aplicaban opciones de pool al caso especial
+`sqlite:///:memory:`). Corregidas migraciones que asumían `ALTER` de
+constraints, no soportado directamente por SQLite (`0002`, `0003`,
+`0005`) — batch mode o declaración en `create_table()`, sin cambio de
+comportamiento en Postgres. Ver `DECISIONS.md` ADR-005.

@@ -30,8 +30,10 @@
 - `repositories`: interfaz de turnos + memoria; interfaz de recordatorios
   enviados + memoria; interfaz de depósitos + memoria.
 - `sqlalchemy_repository` / `catalog_repository` / `availability_repository`
-  / `reminder_repository` / `deposit_repository`: PostgreSQL/SQLAlchemy.
-- `database`: configuración de engine/session factory.
+  / `reminder_repository` / `deposit_repository`: persistencia SQLAlchemy,
+  SQLite por defecto (Postgres soportado, ver ADR-005 de `DECISIONS.md`).
+- `database`: configuración de engine/session factory. Activa
+  `PRAGMA foreign_keys=ON` automáticamente para cualquier conexión SQLite.
 
 ## Próximos
 

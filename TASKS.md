@@ -20,6 +20,11 @@ Resuelto (no era pendiente real, TASKS.md no lo reflejaba): la API HTTP
 propia ya se decidió en ADR-002 (`DECISIONS.md`) — no se crea por ahora,
 revisar solo si aparece un consumidor que la necesite.
 
+Resuelto (2026-07-22): SQLite pasa a ser el destino de producción por
+defecto de toda la familia Libra (`PRAGMA foreign_keys=ON` automático,
+migraciones `0002`/`0003`/`0005` corregidas para no depender de `ALTER`
+de constraints). Postgres sigue soportado. Ver `DECISIONS.md` ADR-005.
+
 ## Bloqueadas
 
 Ninguna bloqueada registrada.
