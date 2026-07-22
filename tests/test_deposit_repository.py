@@ -40,3 +40,13 @@ def test_deposit_repository_round_trips_and_transitions():
 def test_deposit_repository_get_by_appointment_returns_none_when_absent():
     deposits = _repos()
     assert deposits.get_by_appointment("apt-1") is None
+
+
+def test_deposit_repository_round_trips_medio_pago():
+    deposits = _repos()
+    deposits.add(Deposit("dep-1", "apt-1", Decimal("500.00")))
+    assert deposits.get("dep-1").medio_pago is None
+
+    deposits.save(Deposit("dep-1", "apt-1", Decimal("500.00"), DepositStatus.PAID,
+                          medio_pago="mercadopago"))
+    assert deposits.get("dep-1").medio_pago == "mercadopago"

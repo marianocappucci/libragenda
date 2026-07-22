@@ -35,12 +35,14 @@ class SqlAlchemyDepositRepository:
                 raise KeyError(deposit.id)
             row.status = deposit.status.value
             row.amount = deposit.amount
+            row.medio_pago = deposit.medio_pago
 
     @staticmethod
     def _to_row(deposit: Deposit) -> DepositRow:
         return DepositRow(
             id=deposit.id, appointment_id=deposit.appointment_id,
             amount=deposit.amount, status=deposit.status.value,
+            medio_pago=deposit.medio_pago,
         )
 
     @staticmethod
@@ -48,4 +50,5 @@ class SqlAlchemyDepositRepository:
         return Deposit(
             id=row.id, appointment_id=row.appointment_id,
             amount=row.amount, status=DepositStatus(row.status),
+            medio_pago=row.medio_pago,
         )

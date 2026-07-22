@@ -18,9 +18,12 @@
 - `payments`: `Deposit`/`DepositStatus` (una seña por turno, monto lo decide
   el llamador) + `PaymentPort` (puerto de cobro/reembolso, sin lógica de
   proveedor). `DepositManager` valida las transiciones (pending→paid/failed,
-  paid→refunded) y llama al puerto antes de persistir. El motor **no**
-  bloquea `Appointment.confirm()` por seña impaga — es tracking separado;
-  cada vertical decide su propia política de gating.
+  paid→refunded) y llama al puerto antes de persistir. `mark_paid()` acepta
+  un `medio_pago: str | None` opcional (texto libre, ej. "efectivo",
+  "transferencia" — el motor no lo valida ni lo mapea a ningún proveedor);
+  se preserva en `request_refund()`. El motor **no** bloquea
+  `Appointment.confirm()` por seña impaga — es tracking separado; cada
+  vertical decide su propia política de gating.
 - `application`: crear, confirmar, completar, cancelar, reprogramar, y operar
   sobre series completas (`list_series`/`cancel_series`). `complete()`
   transiciona a `COMPLETED` desde `confirmed`/`in_progress` (ya permitido por

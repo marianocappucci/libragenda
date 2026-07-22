@@ -142,6 +142,7 @@ class DepositRow(Base):
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     status: Mapped[str] = mapped_column(String(30), index=True)
+    medio_pago: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
 
 class SqlAlchemyAppointmentRepository:

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## v0.8.0 — 2026-07-22
+
+- **`Deposit.medio_pago`** (opcional, texto libre): `DepositManager.mark_paid()`
+  ahora acepta el medio de pago usado, preservado en `request_refund()`.
+  Migración `0008_deposit_medio_pago`. Segundo paso del plan de facturación
+  de MedLibra con LibraCore (necesita saber cómo se cobró una seña para
+  registrar el movimiento de caja correspondiente). Ver `DECISIONS.md` ADR-007.
+
 ## v0.7.0 — 2026-07-22
 
 - **`InMemoryScheduler.complete()`**: expone la transición a `COMPLETED`

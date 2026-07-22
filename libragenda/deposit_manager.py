@@ -47,8 +47,8 @@ class DepositManager:
         self.payment_port.request_charge(deposit)
         return deposit
 
-    def mark_paid(self, deposit_id: str) -> Deposit:
-        return self._transition(deposit_id, DepositStatus.PAID)
+    def mark_paid(self, deposit_id: str, medio_pago: str | None = None) -> Deposit:
+        return self._transition(deposit_id, DepositStatus.PAID, medio_pago=medio_pago)
 
     def mark_failed(self, deposit_id: str) -> Deposit:
         return self._transition(deposit_id, DepositStatus.FAILED)
@@ -58,7 +58,10 @@ class DepositManager:
         if DepositStatus.REFUNDED not in _ALLOWED_TRANSITIONS[deposit.status]:
             raise InvalidDepositTransition(f"cannot refund {deposit.status.value} deposit")
         self.payment_port.request_refund(deposit)
-        updated = Deposit(deposit.id, deposit.appointment_id, deposit.amount, DepositStatus.REFUNDED)
+        updated = Deposit(
+            deposit.id, deposit.appointment_id, deposit.amount, DepositStatus.REFUNDED,
+            medio_pago=deposit.medio_pago,
+        )
         self.repository.save(updated)
         return updated
 
@@ -68,12 +71,17 @@ class DepositManager:
             raise DepositNotFound(deposit_id)
         return deposit
 
-    def _transition(self, deposit_id: str, target: DepositStatus) -> Deposit:
+    def _transition(
+        self, deposit_id: str, target: DepositStatus, medio_pago: str | None = None
+    ) -> Deposit:
         current = self._get(deposit_id)
         if target not in _ALLOWED_TRANSITIONS[current.status]:
             raise InvalidDepositTransition(
                 f"cannot transition {current.status.value} to {target.value}"
             )
-        updated = Deposit(current.id, current.appointment_id, current.amount, target)
+        updated = Deposit(
+            current.id, current.appointment_id, current.amount, target,
+            medio_pago=medio_pago if medio_pago is not None else current.medio_pago,
+        )
         self.repository.save(updated)
         return updated

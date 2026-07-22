@@ -45,6 +45,25 @@ def test_mark_paid_then_refund_requests_a_refund(manager):
     assert len(manager.payment_port.refunds) == 1
 
 
+def test_mark_paid_accepts_an_optional_medio_pago(manager):
+    manager.request("dep-1", "apt-1", Decimal("500.00"))
+    paid = manager.mark_paid("dep-1", medio_pago="transferencia")
+    assert paid.medio_pago == "transferencia"
+
+
+def test_mark_paid_without_medio_pago_leaves_it_unset(manager):
+    manager.request("dep-1", "apt-1", Decimal("500.00"))
+    paid = manager.mark_paid("dep-1")
+    assert paid.medio_pago is None
+
+
+def test_refund_preserves_medio_pago(manager):
+    manager.request("dep-1", "apt-1", Decimal("500.00"))
+    manager.mark_paid("dep-1", medio_pago="efectivo")
+    refunded = manager.request_refund("dep-1")
+    assert refunded.medio_pago == "efectivo"
+
+
 def test_mark_failed_is_terminal(manager):
     manager.request("dep-1", "apt-1", Decimal("500.00"))
     failed = manager.mark_failed("dep-1")

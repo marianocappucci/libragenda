@@ -111,3 +111,33 @@ Registro ADR. Las decisiones no se borran; si dejan de aplicar, se marcan como r
   test ni comportamiento previo cambia. Sigue pendiente el resto del plan
   (extraer la orquestación de facturación de Contalibra a LibraCore;
   MedLibra construye la integración encima) — ver `TASKS.md` de MedLibra.
+
+## ADR-007 — Agregar `medio_pago` opcional a `Deposit`
+
+- Estado: aceptada
+- Fecha: 2026-07-22
+- Contexto: segundo paso del plan de facturación de MedLibra con
+  LibraCore, después de ADR-006. Para registrar el cobro de una seña como
+  movimiento de caja en `libracore.db.caja` (`create_caja_movimiento`,
+  que requiere `medio_pago`) y para decidir cómo facturarla, MedLibra
+  necesita saber con qué medio se pagó — dato que `Deposit` no
+  capturaba en ningún lado del motor (el `ManualPaymentPort` de
+  Gestiolibra/MedLibra confirma el pago a mano, pero solo con
+  `mark-paid`/`mark-failed`/`refund`, sin registrar el medio).
+- Decisión: `Deposit.medio_pago: str | None = None` (texto libre, sin
+  validar contenido ni mapear a ningún proveedor — mismo criterio que
+  `Appointment.reason`). `DepositManager.mark_paid(deposit_id,
+  medio_pago=None)` lo acepta opcional; `request_refund()` lo preserva
+  del depósito pagado. Migración `0008_deposit_medio_pago` (columna
+  nullable, sin default).
+- Consecuencias: 6 tests nuevos (dominio: rechaza medio_pago en blanco,
+  acepta valor; manager: mark_paid con/sin medio_pago, refund lo
+  preserva; repositorio: round-trip). Verificado con la suite completa
+  contra SQLite (118 tests) y PostgreSQL real (121 tests) + migración
+  `upgrade head` → `downgrade -1` → `upgrade head` contra un archivo
+  SQLite real, confirmando que el `batch_alter_table` del downgrade
+  funciona (lección de ADR-005: `drop_column` fuera de batch mode no
+  funciona en SQLite). Cambio 100% aditivo. Sigue pendiente el paso
+  final del plan: MedLibra construye la integración de facturación
+  encima de esto y de `libracore.arca_facturacion` (ver `TASKS.md` de
+  MedLibra).

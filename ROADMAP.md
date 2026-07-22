@@ -101,3 +101,14 @@ que MedLibra necesita como disparador de facturación automática.
 `InMemoryScheduler.complete(appointment_id)` expone esa transición, sin
 `reason` (no es una cancelación). Sin migración nueva: la columna
 `status` ya soporta el valor. Ver `DECISIONS.md` ADR-006.
+
+## Post-Fase 3 — `medio_pago` en depósitos/señas (completo)
+
+Segundo paso del mismo plan de facturación de MedLibra: para registrar el
+cobro de una seña en el módulo de caja de LibraCore
+(`libracore.db.caja.create_caja_movimiento`) hace falta saber el medio de
+pago usado (efectivo, transferencia, etc.), dato que `Deposit` no tenía.
+`DepositManager.mark_paid(deposit_id, medio_pago=None)` lo acepta opcional
+(texto libre, sin validar contenido ni mapear a proveedor — mismo trato que
+`Appointment.reason`) y lo preserva en `request_refund()`. Migración
+`0008_deposit_medio_pago`. Ver `DECISIONS.md` ADR-007.

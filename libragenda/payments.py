@@ -29,6 +29,11 @@ class Deposit:
     appointment_id: str
     amount: Decimal
     status: DepositStatus = DepositStatus.PENDING
+    medio_pago: str | None = None
+    """Free-text payment method (e.g. 'efectivo', 'transferencia',
+    'mercadopago'), set by the caller once the deposit is marked paid. The
+    engine never validates its content or maps it to any provider — that's
+    vertical-specific (same treatment as Appointment.reason)."""
 
     def __post_init__(self) -> None:
         if not self.id.strip():
@@ -37,6 +42,8 @@ class Deposit:
             raise ValueError("deposit appointment_id cannot be empty")
         if self.amount <= 0:
             raise ValueError("deposit amount must be positive")
+        if self.medio_pago is not None and not self.medio_pago.strip():
+            raise ValueError("medio_pago cannot be blank when provided")
 
 
 class PaymentPort(Protocol):
