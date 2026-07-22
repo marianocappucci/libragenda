@@ -81,3 +81,33 @@ Registro ADR. Las decisiones no se borran; si dejan de aplicar, se marcan como r
   ambos dialectos), no un parche solo-SQLite. Cada consumidor decide su
   propia URL vía `configure()`; este ADR fija cuál es el default
   recomendado para la familia, no una obligación técnica del motor.
+
+## ADR-006 — Exponer `complete()` como método público del turno
+
+- Estado: aceptada
+- Fecha: 2026-07-22
+- Contexto: al retomar el plan de integración de facturación/caja de
+  MedLibra con LibraCore (pausado el 2026-07-22 por alcance real —
+  ver `DECISIONS.md`/`TASKS.md` de MedLibra), el primer paso acordado era
+  que LibraGenda exponga una forma de completar un turno, ya que MedLibra
+  necesita ese evento como disparador de la facturación automática (saldo
+  de consulta + seña cobrada). El estado `AppointmentStatus.COMPLETED` y
+  las transiciones que lo permiten (`confirmed`/`in_progress` →
+  `completed`) ya existían en `_ALLOWED_TRANSITIONS` desde el diseño
+  original de la máquina de estados — nadie había necesitado completar un
+  turno programáticamente hasta ahora, así que no tenía método público en
+  `InMemoryScheduler` (mismo patrón que `confirm()`/`cancel()`, sin
+  gap de diseño real, solo de superficie de API).
+- Decisión: `InMemoryScheduler.complete(appointment_id)` reutiliza
+  `_transition()` como los demás verbos de estado. Sin `reason` (no es
+  una cancelación ni una reprogramación, no aplica el campo). Sin
+  migración: `status` ya acepta el valor `completed` desde el esquema
+  original.
+- Consecuencias: 4 tests nuevos (transición válida desde `confirmed` y
+  desde `in_progress`, rechazo desde `pending`, rechazo de completar dos
+  veces). Verificado con la suite completa contra SQLite (112 tests) y
+  contra PostgreSQL real (115 tests, incluye los 3 tests de migración que
+  solo corren con `DATABASE_URL` seteado). Cambio 100% aditivo: ningún
+  test ni comportamiento previo cambia. Sigue pendiente el resto del plan
+  (extraer la orquestación de facturación de Contalibra a LibraCore;
+  MedLibra construye la integración encima) — ver `TASKS.md` de MedLibra.

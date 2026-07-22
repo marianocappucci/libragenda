@@ -83,6 +83,31 @@ def test_confirmed_appointment_cannot_be_confirmed_again(scheduler):
         scheduler.confirm("apt-1")
 
 
+def test_complete_confirmed_appointment(scheduler):
+    scheduler.create(make_appointment())
+    scheduler.confirm("apt-1")
+    assert scheduler.complete("apt-1").status is AppointmentStatus.COMPLETED
+
+
+def test_complete_in_progress_appointment(scheduler):
+    scheduler.create(make_appointment(status=AppointmentStatus.IN_PROGRESS))
+    assert scheduler.complete("apt-1").status is AppointmentStatus.COMPLETED
+
+
+def test_pending_appointment_cannot_be_completed(scheduler):
+    scheduler.create(make_appointment())
+    with pytest.raises(InvalidTransition):
+        scheduler.complete("apt-1")
+
+
+def test_completed_appointment_cannot_be_completed_again(scheduler):
+    scheduler.create(make_appointment())
+    scheduler.confirm("apt-1")
+    scheduler.complete("apt-1")
+    with pytest.raises(InvalidTransition):
+        scheduler.complete("apt-1")
+
+
 def test_create_rejects_appointment_on_a_branch_holiday():
     scheduler = InMemoryScheduler(
         [Availability("resource-1", 0, time(9), time(18))],

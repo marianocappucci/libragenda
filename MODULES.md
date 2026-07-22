@@ -21,12 +21,14 @@
   paid→refunded) y llama al puerto antes de persistir. El motor **no**
   bloquea `Appointment.confirm()` por seña impaga — es tracking separado;
   cada vertical decide su propia política de gating.
-- `application`: crear, confirmar, cancelar, reprogramar, y operar sobre
-  series completas (`list_series`/`cancel_series`). `cancel`/`reschedule`/
-  `cancel_series` aceptan un `reason: str | None` opcional (motivo de
-  cancelación o reprogramación); el motor no lo valida más allá de "no
-  vacío si se da" ni aplica política de anticipación — eso es decisión de
-  cada vertical.
+- `application`: crear, confirmar, completar, cancelar, reprogramar, y operar
+  sobre series completas (`list_series`/`cancel_series`). `complete()`
+  transiciona a `COMPLETED` desde `confirmed`/`in_progress` (ya permitido por
+  `_ALLOWED_TRANSITIONS`, sin método público hasta ahora); sin `reason`, no es
+  una cancelación. `cancel`/`reschedule`/`cancel_series` aceptan un
+  `reason: str | None` opcional (motivo de cancelación o reprogramación); el
+  motor no lo valida más allá de "no vacío si se da" ni aplica política de
+  anticipación — eso es decisión de cada vertical.
 - `repositories`: interfaz de turnos + memoria; interfaz de recordatorios
   enviados + memoria; interfaz de depósitos + memoria.
 - `sqlalchemy_repository` / `catalog_repository` / `availability_repository`

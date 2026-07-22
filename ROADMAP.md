@@ -88,3 +88,16 @@ documentado de toda la familia (Postgres sigue soportado, no obligatorio).
 constraints, no soportado directamente por SQLite (`0002`, `0003`,
 `0005`) — batch mode o declaración en `create_table()`, sin cambio de
 comportamiento en Postgres. Ver `DECISIONS.md` ADR-005.
+
+## Post-Fase 3 — `complete()` del turno (completo)
+
+Primer paso del plan acordado para retomar la integración de
+facturación/caja de MedLibra con LibraCore (pausada el 2026-07-22 por
+alcance real): el estado `COMPLETED` ya existía en la máquina de
+transiciones (`_ALLOWED_TRANSITIONS` permitía `confirmed`/`in_progress`
+→ `completed`) pero sin método público en `InMemoryScheduler` — un
+consumidor no tenía forma de marcar un turno como completado, que es lo
+que MedLibra necesita como disparador de facturación automática.
+`InMemoryScheduler.complete(appointment_id)` expone esa transición, sin
+`reason` (no es una cancelación). Sin migración nueva: la columna
+`status` ya soporta el valor. Ver `DECISIONS.md` ADR-006.

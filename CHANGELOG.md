@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## v0.7.0 — 2026-07-22
+
+- **`InMemoryScheduler.complete()`**: expone la transición a `COMPLETED`
+  (ya permitida por la máquina de estados desde `confirmed`/`in_progress`,
+  sin método público hasta ahora). Primer paso del plan acordado con
+  MedLibra para disparar facturación automática al completar un turno.
+  Ver `DECISIONS.md` ADR-006.
+
+## v0.6.0 — 2026-07-22
+
 - **SQLite pasa a ser el destino de producción por defecto** para toda la
   familia Libra (silo por cliente), Postgres queda como opción soportada
   para el caso puntual que lo amerite — ver `DECISIONS.md` ADR-005.

@@ -94,6 +94,9 @@ class InMemoryScheduler:
     def cancel(self, appointment_id: str, reason: str | None = None) -> Appointment:
         return self._transition(appointment_id, AppointmentStatus.CANCELLED, reason=reason)
 
+    def complete(self, appointment_id: str) -> Appointment:
+        return self._transition(appointment_id, AppointmentStatus.COMPLETED)
+
     def list_series(self, series_id: str) -> list[Appointment]:
         return [item for item in self.repository.list() if item.series_id == series_id]
 
