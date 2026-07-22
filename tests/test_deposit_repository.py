@@ -14,13 +14,14 @@ from libragenda import (
 from libragenda.sqlalchemy_repository import Base
 
 
-def _repos():
+def _repos(extra_appointment_ids: tuple[str, ...] = ()):
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(engine, expire_on_commit=False)
     appointments = SqlAlchemyAppointmentRepository(session_factory)
-    appointments.add(Appointment("apt-1", "resource-1", "service-1", "client-1",
-                                 datetime(2026, 7, 20, 10), timedelta(minutes=45)))
+    for identifier in ("apt-1", *extra_appointment_ids):
+        appointments.add(Appointment(identifier, "resource-1", "service-1", "client-1",
+                                     datetime(2026, 7, 20, 10), timedelta(minutes=45)))
     return SqlAlchemyDepositRepository(session_factory)
 
 
@@ -50,3 +51,19 @@ def test_deposit_repository_round_trips_medio_pago():
     deposits.save(Deposit("dep-1", "apt-1", Decimal("500.00"), DepositStatus.PAID,
                           medio_pago="mercadopago"))
     assert deposits.get("dep-1").medio_pago == "mercadopago"
+
+
+def test_deposit_repository_list_by_status():
+    deposits = _repos(extra_appointment_ids=("apt-2", "apt-3"))
+    deposits.add(Deposit("dep-1", "apt-1", Decimal("500.00")))
+    deposits.add(Deposit("dep-2", "apt-2", Decimal("300.00")))
+    deposits.add(Deposit("dep-3", "apt-3", Decimal("100.00")))
+    deposits.save(Deposit("dep-2", "apt-2", Decimal("300.00"), DepositStatus.PAID))
+
+    pending = deposits.list_by_status(DepositStatus.PENDING)
+    assert {item.id for item in pending} == {"dep-1", "dep-3"}
+
+    paid = deposits.list_by_status(DepositStatus.PAID)
+    assert {item.id for item in paid} == {"dep-2"}
+
+    assert deposits.list_by_status(DepositStatus.REFUNDED) == []

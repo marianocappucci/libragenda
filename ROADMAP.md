@@ -102,6 +102,16 @@ que MedLibra necesita como disparador de facturación automática.
 `reason` (no es una cancelación). Sin migración nueva: la columna
 `status` ya soporta el valor. Ver `DECISIONS.md` ADR-006.
 
+## Post-Fase 3 — consultas de lectura para dashboards (completo)
+
+MedLibra y Gestiolibra necesitan, cada uno, un dashboard con recordatorios
+enviados en un período y señas pendientes de confirmar — ninguna de las
+dos consultas existía. `SentReminderRepository.list_sent(date_from,
+date_to)` y `DepositRepository.list_by_status(status)`, mismo patrón que
+el resto del motor: puro de lectura, sin política de negocio (el motor no
+decide qué es "pendiente hace mucho" ni arma ningún reporte, solo entrega
+los datos). Sin migración: ambas leen columnas ya existentes.
+
 ## Post-Fase 3 — `medio_pago` en depósitos/señas (completo)
 
 Segundo paso del mismo plan de facturación de MedLibra: para registrar el

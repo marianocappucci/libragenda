@@ -141,3 +141,30 @@ Registro ADR. Las decisiones no se borran; si dejan de aplicar, se marcan como r
   final del plan: MedLibra construye la integración de facturación
   encima de esto y de `libracore.arca_facturacion` (ver `TASKS.md` de
   MedLibra).
+
+## ADR-008 — Consultas de lectura para dashboards: `list_sent()` y `list_by_status()`
+
+- Estado: aceptada
+- Fecha: 2026-07-22
+- Contexto: MedLibra (y después Gestiolibra) empezaron el dashboard de
+  Fase 2 pidiendo "recordatorios enviados en un rango" y "señas
+  pendientes de confirmar" — ninguna de las dos consultas existía en el
+  motor. `SentReminderRepository` solo sabía responder "¿está enviado
+  este par (turno, política)?" (`sent_pairs`, pensado para el propio
+  `ReminderDispatcher` evitando reenvíos, no para reportar). `DepositRepository`
+  solo sabía buscar por id o por turno — sin forma de listar por estado.
+- Decisión: `SentReminderRepository.list_sent(date_from, date_to) ->
+  list[tuple[str, str, datetime]]` (appointment_id, policy_id, sent_at) y
+  `DepositRepository.list_by_status(status: DepositStatus) -> list[Deposit]`.
+  Ambas puramente de lectura, sin ninguna política de negocio — el motor
+  no decide qué cuenta como "reciente" ni arma ningún reporte, cada
+  vertical arma su propio dashboard encima. Mismo criterio que el resto
+  de los métodos de listado del motor (`list_series`, `list()` de
+  `AppointmentRepository`).
+- Consecuencias: sin migración (ambas leen columnas que ya existían:
+  `sent_reminders.sent_at`, `deposits.status`). Tag `v0.9.0`. 3 tests
+  nuevos, verificado con la suite completa contra SQLite (123 tests) y
+  PostgreSQL real (123 tests). `InMemorySentReminderRepository` pasó de
+  guardar solo el par `(appointment_id, policy_id)` en un `set` a
+  guardar también `sent_at` en un `dict` — necesario para que el
+  adaptador en memoria pueda filtrar por rango igual que el real.

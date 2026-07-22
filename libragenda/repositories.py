@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Protocol
 
 from .domain import Appointment
-from .payments import Deposit
+from .payments import Deposit, DepositStatus
 
 
 class AppointmentRepository(Protocol):
@@ -50,19 +50,32 @@ class SentReminderRepository(Protocol):
 
     def mark_sent(self, appointment_id: str, policy_id: str, sent_at: datetime) -> None: ...
 
+    def list_sent(
+        self, date_from: datetime, date_to: datetime
+    ) -> list[tuple[str, str, datetime]]: ...
+
 
 class InMemorySentReminderRepository:
     """Reference adapter for tests and local development."""
 
     def __init__(self) -> None:
-        self._sent: set[tuple[str, str]] = set()
+        self._sent: dict[tuple[str, str], datetime] = {}
 
     def sent_pairs(self, appointment_ids: list[str]) -> set[tuple[str, str]]:
         wanted = set(appointment_ids)
         return {pair for pair in self._sent if pair[0] in wanted}
 
     def mark_sent(self, appointment_id: str, policy_id: str, sent_at: datetime) -> None:
-        self._sent.add((appointment_id, policy_id))
+        self._sent[(appointment_id, policy_id)] = sent_at
+
+    def list_sent(
+        self, date_from: datetime, date_to: datetime
+    ) -> list[tuple[str, str, datetime]]:
+        return [
+            (appointment_id, policy_id, sent_at)
+            for (appointment_id, policy_id), sent_at in self._sent.items()
+            if date_from <= sent_at <= date_to
+        ]
 
 
 class DepositRepository(Protocol):
@@ -75,6 +88,8 @@ class DepositRepository(Protocol):
     def get_by_appointment(self, appointment_id: str) -> Deposit | None: ...
 
     def save(self, deposit: Deposit) -> None: ...
+
+    def list_by_status(self, status: DepositStatus) -> list[Deposit]: ...
 
 
 class InMemoryDepositRepository:
@@ -103,3 +118,6 @@ class InMemoryDepositRepository:
         if deposit.id not in self._items:
             raise KeyError(deposit.id)
         self._items[deposit.id] = deposit
+
+    def list_by_status(self, status: DepositStatus) -> list[Deposit]:
+        return [item for item in self._items.values() if item.status == status]

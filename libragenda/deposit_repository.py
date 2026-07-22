@@ -1,5 +1,6 @@
 """Persistence for the at-most-one-deposit-per-appointment ledger."""
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from .payments import Deposit, DepositStatus
@@ -36,6 +37,13 @@ class SqlAlchemyDepositRepository:
             row.status = deposit.status.value
             row.amount = deposit.amount
             row.medio_pago = deposit.medio_pago
+
+    def list_by_status(self, status: DepositStatus) -> list[Deposit]:
+        with self.session_factory() as session:
+            rows = session.scalars(
+                select(DepositRow).where(DepositRow.status == status.value)
+            ).all()
+            return [self._to_domain(row) for row in rows]
 
     @staticmethod
     def _to_row(deposit: Deposit) -> DepositRow:

@@ -37,3 +37,14 @@ class SqlAlchemyReminderRepository:
                 ))
         except IntegrityError:
             pass
+
+    def list_sent(
+        self, date_from: datetime, date_to: datetime
+    ) -> list[tuple[str, str, datetime]]:
+        with self.session_factory() as session:
+            rows = (
+                session.query(SentReminderRow)
+                .filter(SentReminderRow.sent_at >= date_from, SentReminderRow.sent_at <= date_to)
+                .all()
+            )
+            return [(row.appointment_id, row.policy_id, row.sent_at) for row in rows]

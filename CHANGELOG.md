@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## v0.9.0 — 2026-07-22
+
+- **`SentReminderRepository.list_sent(date_from, date_to)`** y
+  **`DepositRepository.list_by_status(status)`**: consultas de lectura
+  necesarias para el dashboard de MedLibra/Gestiolibra (recordatorios
+  enviados y señas pendientes en un rango). Sin migración: solo
+  lectura sobre columnas ya existentes.
+
 ## v0.8.0 — 2026-07-22
 
 - **`Deposit.medio_pago`** (opcional, texto libre): `DepositManager.mark_paid()`
