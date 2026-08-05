@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from datetime import datetime
 from typing import Protocol
 
-from .domain import Appointment
+from .domain import Appointment, AppointmentTransition
 from .payments import Deposit, DepositStatus
 
 
@@ -41,6 +41,31 @@ class InMemoryAppointmentRepository:
 
     def list(self) -> Iterable[Appointment]:
         return tuple(self._items.values())
+
+
+class TransitionLogRepository(Protocol):
+    """Port for the append-only history of appointment status changes."""
+
+    def record(self, transition: AppointmentTransition) -> None: ...
+
+    def list_for(self, appointment_id: str) -> list[AppointmentTransition]: ...
+
+
+class InMemoryTransitionLog:
+    """Reference adapter for tests and local development.
+
+    Append-only on purpose: there is no update and no delete, because a
+    history that can be edited answers nothing.
+    """
+
+    def __init__(self) -> None:
+        self._items: list[AppointmentTransition] = []
+
+    def record(self, transition: AppointmentTransition) -> None:
+        self._items.append(transition)
+
+    def list_for(self, appointment_id: str) -> list[AppointmentTransition]:
+        return [item for item in self._items if item.appointment_id == appointment_id]
 
 
 class SentReminderRepository(Protocol):

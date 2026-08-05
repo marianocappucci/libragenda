@@ -3,6 +3,7 @@
 The first domain layer is deliberately framework- and persistence-agnostic.
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from enum import StrEnum
@@ -52,12 +53,33 @@ class Availability:
     weekday: int
     starts_at: time
     ends_at: time
+    valid_from: date | None = None
+    """First day this window applies, inclusive. `None` means "always was"."""
+    valid_to: date | None = None
+    """Last day this window applies, inclusive. `None` means "still is"."""
 
     def __post_init__(self) -> None:
         if not 0 <= self.weekday <= 6:
             raise ValueError("weekday must be between 0 (Monday) and 6 (Sunday)")
         if self.starts_at >= self.ends_at:
             raise ValueError("availability must end after it starts")
+        if (
+            self.valid_from is not None
+            and self.valid_to is not None
+            and self.valid_from > self.valid_to
+        ):
+            raise ValueError("availability validity must end on or after it starts")
+
+    def applies_on(self, day: date) -> bool:
+        """Return whether this window is in force on `day`.
+
+        Both bounds are inclusive and independently optional, so a window
+        with neither behaves exactly like one that never had them — which is
+        what every window created before validity existed relies on.
+        """
+        if self.valid_from is not None and day < self.valid_from:
+            return False
+        return not (self.valid_to is not None and day > self.valid_to)
 
     def contains(self, starts_at: datetime, ends_at: datetime) -> bool:
         """Return whether an interval falls inside this weekly window."""
@@ -66,6 +88,7 @@ class Availability:
             and starts_at.time() >= self.starts_at
             and ends_at.time() <= self.ends_at
             and starts_at.date() == ends_at.date()
+            and self.applies_on(starts_at.date())
         )
 
 
@@ -101,6 +124,18 @@ class Appointment:
     """Free-text note for the last cancellation or reschedule, set by the
     caller. The engine never requires, validates the content of, or enforces
     a notice policy around it — that's vertical-specific business logic."""
+    secondary_resource_ids: tuple[str, ...] = ()
+    """Extra resources this appointment occupies for the same interval, on top
+    of `resource_id`. The engine assigns them no meaning beyond occupancy: a
+    consulting room, a workshop bay, a washing station. They are checked for
+    conflicts and blocks exactly like the primary resource, but they are NOT
+    required to have weekly availability of their own — a room is open
+    whenever somebody books it, unlike a person."""
+    overbooked: bool = False
+    """Set by the scheduler when this appointment was deliberately allowed to
+    overlap another one. It is what separates an authorized overbooking from a
+    data-entry mistake, which is the whole reason it is stored rather than
+    inferred from the overlap."""
 
     def __post_init__(self) -> None:
         if not self.id.strip():
@@ -116,6 +151,18 @@ class Appointment:
             raise ValueError("series_id cannot be blank when provided")
         if self.reason is not None and not self.reason.strip():
             raise ValueError("reason cannot be blank when provided")
+        for secondary_id in self.secondary_resource_ids:
+            if not secondary_id.strip():
+                raise ValueError("secondary resource id cannot be blank")
+        if len(set(self.secondary_resource_ids)) != len(self.secondary_resource_ids):
+            raise ValueError("secondary resource ids cannot repeat")
+        if self.resource_id in self.secondary_resource_ids:
+            raise ValueError("secondary resource ids cannot include the primary resource")
+
+    @property
+    def occupied_resource_ids(self) -> tuple[str, ...]:
+        """Every resource this appointment makes busy, primary one first."""
+        return (self.resource_id, *self.secondary_resource_ids)
 
     @property
     def ends_at(self) -> datetime:
@@ -123,6 +170,55 @@ class Appointment:
 
     def is_on(self, day: date) -> bool:
         return self.starts_at.date() == day
+
+
+@dataclass(frozen=True, slots=True)
+class AppointmentTransition:
+    """One recorded move of an appointment from one status to another.
+
+    The creation of an appointment is recorded too, with `from_status` unset —
+    otherwise the first thing that ever happened to a booking would be the
+    only thing missing from its history.
+
+    Timestamps like "when did attention start" are read from this log rather
+    than stored as columns on the appointment: a status and the instant it was
+    reached are the same fact, and keeping them together is what stops the two
+    from drifting apart.
+    """
+
+    appointment_id: str
+    to_status: AppointmentStatus
+    at: datetime
+    from_status: AppointmentStatus | None = None
+    actor: str | None = None
+    """Who caused the transition, as the consumer names its users. The engine
+    has no notion of identity and never validates this."""
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.appointment_id.strip():
+            raise ValueError("transition appointment_id cannot be empty")
+        if self.at.tzinfo is None:
+            raise ValueError("transition timestamp must be timezone-aware")
+        if self.actor is not None and not self.actor.strip():
+            raise ValueError("actor cannot be blank when provided")
+        if self.reason is not None and not self.reason.strip():
+            raise ValueError("reason cannot be blank when provided")
+
+
+def first_time_at(
+    transitions: Iterable[AppointmentTransition], status: AppointmentStatus
+) -> datetime | None:
+    """When an appointment first reached `status`, or `None` if it never did.
+
+    This is how the engine answers "started at" and "finished at" without
+    either column existing.
+    """
+    return next(
+        (item.at for item in sorted(transitions, key=lambda item: item.at)
+         if item.to_status == status),
+        None,
+    )
 
 
 @dataclass(frozen=True, slots=True)
