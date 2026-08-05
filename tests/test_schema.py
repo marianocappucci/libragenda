@@ -10,7 +10,8 @@ def test_full_schema_has_core_tables_and_foreign_keys():
     assert set(inspector.get_table_names()) == {
         "branches", "clients", "resources", "services", "availability",
         "time_blocks", "availability_exceptions", "appointments", "holidays",
-        "sent_reminders", "deposits",
+        "sent_reminders", "deposits", "appointment_resources",
+        "appointment_transitions", "agenda_policies",
     }
     foreign_keys = inspector.get_foreign_keys("appointments")
     assert {(item["constrained_columns"][0], item["referred_table"]) for item in foreign_keys} == {
@@ -21,3 +22,8 @@ def test_full_schema_has_core_tables_and_foreign_keys():
     assert {(item["constrained_columns"][0], item["referred_table"]) for item in deposit_foreign_keys} == {
         ("appointment_id", "appointments"),
     }
+    occupancy_foreign_keys = inspector.get_foreign_keys("appointment_resources")
+    assert {
+        (item["constrained_columns"][0], item["referred_table"])
+        for item in occupancy_foreign_keys
+    } == {("appointment_id", "appointments"), ("resource_id", "resources")}

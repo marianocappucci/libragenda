@@ -7,9 +7,11 @@ from sqlalchemy import (
     Date, DateTime, ForeignKey, Integer, Numeric, String, Text, Time, UniqueConstraint,
     create_engine, select,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+from sqlalchemy.orm import (
+    DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker,
+)
 
-from .domain import Appointment, AppointmentStatus
+from .domain import Appointment, AppointmentStatus, AppointmentTransition
 
 
 class Base(DeclarativeBase):
@@ -83,6 +85,16 @@ class AvailabilityRow(Base):
     weekday: Mapped[int] = mapped_column(Integer)
     starts_at: Mapped[time] = mapped_column(Time)
     ends_at: Mapped[time] = mapped_column(Time)
+    valid_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+
+class AgendaPolicyRow(Base):
+    __tablename__ = "agenda_policies"
+
+    resource_id: Mapped[str] = mapped_column(ForeignKey("resources.id"), primary_key=True)
+    slot_interval_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    max_overbookings_per_day: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class TimeBlockRow(Base):
@@ -121,6 +133,45 @@ class AppointmentRow(Base):
     )
     series_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    overbooked: Mapped[bool] = mapped_column(default=False)
+    secondary_resources: Mapped[list["AppointmentResourceRow"]] = relationship(
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="AppointmentResourceRow.position",
+    )
+
+
+class AppointmentResourceRow(Base):
+    """Extra resources one appointment occupies, beyond its primary one.
+
+    A join table rather than a column because the relation is plural by
+    nature; `position` exists only so the tuple round-trips in the order the
+    caller wrote it.
+    """
+
+    __tablename__ = "appointment_resources"
+    __table_args__ = (UniqueConstraint("appointment_id", "resource_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    appointment_id: Mapped[str] = mapped_column(
+        ForeignKey("appointments.id", ondelete="CASCADE"), index=True
+    )
+    resource_id: Mapped[str] = mapped_column(ForeignKey("resources.id"), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class AppointmentTransitionRow(Base):
+    __tablename__ = "appointment_transitions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    appointment_id: Mapped[str] = mapped_column(
+        ForeignKey("appointments.id", ondelete="CASCADE"), index=True
+    )
+    from_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    to_status: Mapped[str] = mapped_column(String(30), index=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    actor: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class SentReminderRow(Base):
@@ -143,6 +194,43 @@ class DepositRow(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     status: Mapped[str] = mapped_column(String(30), index=True)
     medio_pago: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+
+def _secondary_rows(appointment: Appointment) -> list[AppointmentResourceRow]:
+    """Build the join rows for an appointment's secondary resources.
+
+    Module level rather than a method because inside the repository's class
+    body `list` resolves to its own `list()` method, so the annotation below
+    would blow up at import time.
+    """
+    return [
+        AppointmentResourceRow(resource_id=resource_id, position=position)
+        for position, resource_id in enumerate(appointment.secondary_resource_ids)
+    ]
+
+
+def _sync_secondary_rows(row: AppointmentRow, appointment: Appointment) -> None:
+    """Reconcile the join rows in place, keeping the ones that survive.
+
+    Replacing the whole collection would be simpler to read, but SQLAlchemy
+    flushes the inserts before the delete-orphans, so a resource present both
+    before and after trips the `(appointment_id, resource_id)` unique
+    constraint. Touching only what actually changed avoids the clash instead
+    of ordering around it.
+    """
+    wanted = list(appointment.secondary_resource_ids)
+    existing = {item.resource_id: item for item in row.secondary_resources}
+    for item in list(row.secondary_resources):
+        if item.resource_id not in wanted:
+            row.secondary_resources.remove(item)
+    for position, resource_id in enumerate(wanted):
+        kept = existing.get(resource_id)
+        if kept is None:
+            row.secondary_resources.append(
+                AppointmentResourceRow(resource_id=resource_id, position=position)
+            )
+        else:
+            kept.position = position
 
 
 class SqlAlchemyAppointmentRepository:
@@ -178,8 +266,8 @@ class SqlAlchemyAppointmentRepository:
             rows = session.scalars(select(AppointmentRow).order_by(AppointmentRow.starts_at)).all()
             return tuple(self._to_domain(row) for row in rows)
 
-    @staticmethod
-    def _to_row(appointment: Appointment) -> AppointmentRow:
+    @classmethod
+    def _to_row(cls, appointment: Appointment) -> AppointmentRow:
         return AppointmentRow(
             id=appointment.id, resource_id=appointment.resource_id,
             service_id=appointment.service_id, client_id=appointment.client_id,
@@ -187,10 +275,12 @@ class SqlAlchemyAppointmentRepository:
             duration_seconds=int(appointment.duration.total_seconds()),
             status=appointment.status.value, branch_id=appointment.branch_id,
             series_id=appointment.series_id, reason=appointment.reason,
+            overbooked=appointment.overbooked,
+            secondary_resources=_secondary_rows(appointment),
         )
 
-    @staticmethod
-    def _copy_to_row(row: AppointmentRow, appointment: Appointment) -> None:
+    @classmethod
+    def _copy_to_row(cls, row: AppointmentRow, appointment: Appointment) -> None:
         row.resource_id = appointment.resource_id
         row.service_id = appointment.service_id
         row.client_id = appointment.client_id
@@ -200,6 +290,8 @@ class SqlAlchemyAppointmentRepository:
         row.branch_id = appointment.branch_id
         row.series_id = appointment.series_id
         row.reason = appointment.reason
+        row.overbooked = appointment.overbooked
+        _sync_secondary_rows(row, appointment)
 
     @staticmethod
     def _to_domain(row: AppointmentRow) -> Appointment:
@@ -209,4 +301,55 @@ class SqlAlchemyAppointmentRepository:
             duration=timedelta(seconds=row.duration_seconds),
             status=AppointmentStatus(row.status), branch_id=row.branch_id,
             series_id=row.series_id, reason=row.reason,
+            secondary_resource_ids=tuple(
+                item.resource_id for item in row.secondary_resources
+            ),
+            overbooked=row.overbooked,
         )
+
+
+class SqlAlchemyTransitionLog:
+    """Append-only persistence for the appointment status history."""
+
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self.session_factory = session_factory
+
+    @classmethod
+    def from_url(cls, url: str) -> "SqlAlchemyTransitionLog":
+        engine = create_engine(url)
+        Base.metadata.create_all(engine)
+        return cls(sessionmaker(engine, expire_on_commit=False))
+
+    def record(self, transition: AppointmentTransition) -> None:
+        with self.session_factory.begin() as session:
+            session.add(AppointmentTransitionRow(
+                appointment_id=transition.appointment_id,
+                from_status=(
+                    transition.from_status.value if transition.from_status else None
+                ),
+                to_status=transition.to_status.value,
+                at=transition.at,
+                actor=transition.actor,
+                reason=transition.reason,
+            ))
+
+    def list_for(self, appointment_id: str) -> list[AppointmentTransition]:
+        with self.session_factory() as session:
+            rows = session.scalars(
+                select(AppointmentTransitionRow)
+                .where(AppointmentTransitionRow.appointment_id == appointment_id)
+                .order_by(AppointmentTransitionRow.at, AppointmentTransitionRow.id)
+            ).all()
+            return [
+                AppointmentTransition(
+                    appointment_id=row.appointment_id,
+                    from_status=(
+                        AppointmentStatus(row.from_status) if row.from_status else None
+                    ),
+                    to_status=AppointmentStatus(row.to_status),
+                    at=ensure_utc(row.at),
+                    actor=row.actor,
+                    reason=row.reason,
+                )
+                for row in rows
+            ]

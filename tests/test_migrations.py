@@ -24,7 +24,8 @@ pytestmark = pytest.mark.skipif(
 EXPECTED_TABLES = {
     "branches", "clients", "resources", "services", "availability",
     "time_blocks", "availability_exceptions", "appointments", "holidays",
-    "sent_reminders", "deposits", "alembic_version",
+    "sent_reminders", "deposits", "alembic_version", "appointment_resources",
+    "appointment_transitions", "agenda_policies",
 }
 
 

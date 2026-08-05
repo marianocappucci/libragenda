@@ -1,10 +1,13 @@
 """CRUD repository for weekly availability, time blocks and exceptions."""
 
+from datetime import timedelta
+
 from sqlalchemy.orm import Session, sessionmaker
 
 from .domain import Availability
-from .scheduling import AvailabilityException, TimeBlock
+from .scheduling import AgendaPolicy, AvailabilityException, TimeBlock
 from .sqlalchemy_repository import (
+    AgendaPolicyRow,
     AvailabilityExceptionRow,
     AvailabilityRow,
     TimeBlockRow,
@@ -41,6 +44,8 @@ class SqlAlchemyAvailabilityRepository:
             row.weekday = availability.weekday
             row.starts_at = availability.starts_at
             row.ends_at = availability.ends_at
+            row.valid_from = availability.valid_from
+            row.valid_to = availability.valid_to
 
     def delete_availability(self, availability_id: int) -> None:
         with self.session_factory.begin() as session:
@@ -65,6 +70,8 @@ class SqlAlchemyAvailabilityRepository:
             weekday=availability.weekday,
             starts_at=availability.starts_at,
             ends_at=availability.ends_at,
+            valid_from=availability.valid_from,
+            valid_to=availability.valid_to,
         )
 
     @staticmethod
@@ -74,6 +81,55 @@ class SqlAlchemyAvailabilityRepository:
             weekday=row.weekday,
             starts_at=row.starts_at,
             ends_at=row.ends_at,
+            valid_from=row.valid_from,
+            valid_to=row.valid_to,
+        )
+
+    # -- agenda policies ---------------------------------------------------
+
+    def set_policy(self, policy: AgendaPolicy) -> None:
+        """Store the policy of a resource, replacing any previous one.
+
+        Upsert rather than add/update because a resource has at most one
+        agenda policy — a second one would be a contradiction, not a record.
+        """
+        with self.session_factory.begin() as session:
+            row = session.get(AgendaPolicyRow, policy.resource_id)
+            if row is None:
+                session.add(AgendaPolicyRow(
+                    resource_id=policy.resource_id,
+                    slot_interval_seconds=int(policy.slot_interval.total_seconds()),
+                    max_overbookings_per_day=policy.max_overbookings_per_day,
+                ))
+                return
+            row.slot_interval_seconds = int(policy.slot_interval.total_seconds())
+            row.max_overbookings_per_day = policy.max_overbookings_per_day
+
+    def get_policy(self, resource_id: str) -> AgendaPolicy | None:
+        with self.session_factory() as session:
+            row = session.get(AgendaPolicyRow, resource_id)
+            return self._policy_to_domain(row) if row else None
+
+    def delete_policy(self, resource_id: str) -> None:
+        with self.session_factory.begin() as session:
+            row = session.get(AgendaPolicyRow, resource_id)
+            if row is None:
+                raise KeyError(resource_id)
+            session.delete(row)
+
+    def list_policies(self) -> tuple[AgendaPolicy, ...]:
+        with self.session_factory() as session:
+            return tuple(
+                self._policy_to_domain(row)
+                for row in session.query(AgendaPolicyRow).all()
+            )
+
+    @staticmethod
+    def _policy_to_domain(row: AgendaPolicyRow) -> AgendaPolicy:
+        return AgendaPolicy(
+            resource_id=row.resource_id,
+            slot_interval=timedelta(seconds=row.slot_interval_seconds),
+            max_overbookings_per_day=row.max_overbookings_per_day,
         )
 
     # -- point-in-time blocks --------------------------------------------
