@@ -1,6 +1,27 @@
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect
 
 from libragenda.sqlalchemy_repository import Base
+
+
+def test_revision_ids_fit_in_the_alembic_version_column():
+    """`alembic_version.version_num` es varchar(32) y PostgreSQL lo hace cumplir.
+
+    Vive acá y no en `test_migrations.py` a propósito: aquel módulo entero se
+    saltea sin `DATABASE_URL`, así que un id largo pasaría toda la suite local
+    y recién explotaría contra Postgres. Pasó con el `0009`, que nació con 33
+    caracteres y solo lo agarró el CI. Este chequeo no necesita base ninguna.
+    """
+    revisions = [
+        rev.revision
+        for rev in ScriptDirectory.from_config(Config("alembic.ini")).walk_revisions()
+    ]
+
+    # Sin esto el test pasaría en vacío el día que no encuentre la cadena, que
+    # es la forma más silenciosa de perder un chequeo.
+    assert len(revisions) >= 9
+    assert [rev for rev in revisions if len(rev) > 32] == []
 
 
 def test_full_schema_has_core_tables_and_foreign_keys():

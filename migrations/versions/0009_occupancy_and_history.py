@@ -8,7 +8,10 @@ with no policy books back-to-back and refuses overbooking.
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0009_agenda_occupancy_and_history"
+# El id no puede pasar de 32 caracteres: `alembic_version.version_num` es un
+# varchar(32). SQLite no valida el largo y deja pasar cualquiera, asi que esto
+# solo se ve contra PostgreSQL -- lo agarro el CI, no la suite local.
+revision = "0009_occupancy_and_history"
 down_revision = "0008_deposit_medio_pago"
 branch_labels = None
 depends_on = None

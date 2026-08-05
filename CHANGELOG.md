@@ -26,7 +26,7 @@ jornada. Ver `DECISIONS.md`, bloque previo a ADR-009.
 - **Sobreturno autorizado**: `create(..., allow_overbooking=True)` con tope
   diario por agenda, `Appointment.overbooked` y `OverbookingLimitReached`.
   ADR-013.
-- Migración `0009_agenda_occupancy_and_history`. **Todo aditivo**: los 120
+- Migración `0009_occupancy_and_history`. **Todo aditivo**: los 120
   tests previos pasan sin tocar ninguno, y una base con datos en `0008` migra
   conservando cada fila.
 
