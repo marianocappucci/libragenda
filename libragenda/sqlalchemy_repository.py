@@ -1,5 +1,6 @@
 """SQLAlchemy persistence adapter for appointments."""
 
+from collections.abc import Callable, Iterable
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
@@ -248,6 +249,35 @@ class SqlAlchemyAppointmentRepository:
     def add(self, appointment: Appointment) -> None:
         with self.session_factory.begin() as session:
             session.add(self._to_row(appointment))
+
+    def reserve(
+        self,
+        appointment: Appointment,
+        validator: Callable[[Iterable[Appointment]], Appointment],
+    ) -> Appointment:
+        """Validate and insert an appointment in one database transaction.
+
+        PostgreSQL locks the occupied resource rows so concurrent schedulers
+        serialize on the same resource. SQLite has no row locks, so acquire
+        its writer lock before reading the candidate set instead.
+        """
+        with self.session_factory.begin() as session:
+            if session.bind.dialect.name == "sqlite":
+                session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+            occupied_ids = appointment.occupied_resource_ids
+            if occupied_ids:
+                session.scalars(
+                    select(ResourceRow)
+                    .where(ResourceRow.id.in_(occupied_ids))
+                    .with_for_update()
+                ).all()
+            if session.get(AppointmentRow, appointment.id) is not None:
+                raise ValueError(f"appointment already exists: {appointment.id}")
+            existing_rows = session.scalars(select(AppointmentRow)).all()
+            existing = tuple(self._to_domain(row) for row in existing_rows)
+            stored = validator(existing)
+            session.add(self._to_row(stored))
+            return stored
 
     def get(self, appointment_id: str) -> Appointment | None:
         with self.session_factory() as session:

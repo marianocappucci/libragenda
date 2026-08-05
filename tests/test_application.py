@@ -1,4 +1,5 @@
 from datetime import date, datetime, time, timedelta, timezone
+from threading import Barrier, Thread
 
 import pytest
 
@@ -384,6 +385,102 @@ def test_overbooking_does_not_open_a_closed_agenda(overbookable):
     # It relaxes the conflict rule and nothing else: 19h is outside the window.
     with pytest.raises(AppointmentUnavailable):
         overbookable.create(make_appointment("late", hour=19), allow_overbooking=True)
+
+
+class SnapshotBarrierRepository:
+    """Force two callers to validate against the same pre-write snapshot."""
+
+    def __init__(self):
+        from libragenda.repositories import InMemoryAppointmentRepository
+
+        self._repository = InMemoryAppointmentRepository()
+        self._barrier = Barrier(2)
+        self._list_calls = 0
+
+    def add(self, appointment):
+        return self._repository.add(appointment)
+
+    def get(self, appointment_id):
+        return self._repository.get(appointment_id)
+
+    def save(self, appointment):
+        return self._repository.save(appointment)
+
+    def list(self):
+        snapshot = tuple(self._repository.list())
+        self._list_calls += 1
+        if self._list_calls <= 2:
+            self._barrier.wait(timeout=5)
+        return snapshot
+
+    def reserve(self, appointment, validator):
+        if appointment.id.startswith(("apt-", "over-")):
+            self._barrier.wait(timeout=5)
+        return self._repository.reserve(appointment, validator)
+
+
+def test_concurrent_same_slot_is_serialized_by_repository():
+    repository = SnapshotBarrierRepository()
+    schedulers = [
+        InMemoryScheduler(
+            [Availability("resource-1", 0, time(9), time(18))], repository=repository
+        )
+        for _ in range(2)
+    ]
+    results, errors = [], []
+
+    def create(scheduler, identifier):
+        try:
+            results.append(scheduler.create(make_appointment(identifier)))
+        except Exception as exc:  # pragma: no cover - assertion below names it
+            errors.append(exc)
+
+    threads = [Thread(target=create, args=(scheduler, f"apt-{index}"))
+               for index, scheduler in enumerate(schedulers)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert len(results) == 1
+    assert len(errors) == 1
+    assert isinstance(errors[0], AppointmentConflict)
+
+
+def test_concurrent_overbookings_respect_the_daily_cap():
+    repository = SnapshotBarrierRepository()
+    schedulers = [
+        InMemoryScheduler(
+            [Availability("resource-1", 0, time(9), time(18))],
+            repository=repository,
+            policies=[AgendaPolicy("resource-1", max_overbookings_per_day=1)],
+        )
+        for _ in range(2)
+    ]
+    # Seed the ordinary booking outside the race; both candidates then need
+    # the same single remaining overbooking slot.
+    schedulers[0].create(make_appointment("base"))
+    results, errors = [], []
+
+    def create(scheduler, identifier):
+        try:
+            results.append(
+                scheduler.create(make_appointment(identifier), allow_overbooking=True)
+            )
+        except Exception as exc:  # pragma: no cover - assertion below names it
+            errors.append(exc)
+
+    threads = [Thread(target=create, args=(scheduler, f"over-{index}"))
+               for index, scheduler in enumerate(schedulers)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert len(results) == 1
+    assert results[0].overbooked is True
+    assert len(errors) == 1
+    assert isinstance(errors[0], OverbookingLimitReached)
 
 
 # -- the agenda gap, through the scheduler ----------------------------------

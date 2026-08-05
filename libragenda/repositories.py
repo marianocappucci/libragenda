@@ -1,6 +1,6 @@
 """Storage ports and in-memory adapters for LibraGenda."""
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import datetime
 from typing import Protocol
 
@@ -19,17 +19,25 @@ class AppointmentRepository(Protocol):
 
     def list(self) -> Iterable[Appointment]: ...
 
+    def reserve(
+        self, appointment: Appointment, validator: Callable[[Iterable[Appointment]], Appointment]
+    ) -> Appointment: ...
+
 
 class InMemoryAppointmentRepository:
     """Reference adapter for tests and local development."""
 
     def __init__(self) -> None:
+        from threading import RLock
+
         self._items: dict[str, Appointment] = {}
+        self._lock = RLock()
 
     def add(self, appointment: Appointment) -> None:
-        if appointment.id in self._items:
-            raise ValueError(f"appointment already exists: {appointment.id}")
-        self._items[appointment.id] = appointment
+        with self._lock:
+            if appointment.id in self._items:
+                raise ValueError(f"appointment already exists: {appointment.id}")
+            self._items[appointment.id] = appointment
 
     def get(self, appointment_id: str) -> Appointment | None:
         return self._items.get(appointment_id)
@@ -41,6 +49,16 @@ class InMemoryAppointmentRepository:
 
     def list(self) -> Iterable[Appointment]:
         return tuple(self._items.values())
+
+    def reserve(
+        self, appointment: Appointment, validator: Callable[[Iterable[Appointment]], Appointment]
+    ) -> Appointment:
+        with self._lock:
+            if appointment.id in self._items:
+                raise ValueError(f"appointment already exists: {appointment.id}")
+            result = validator(tuple(self._items.values()))
+            self._items[result.id] = result
+            return result
 
 
 class TransitionLogRepository(Protocol):

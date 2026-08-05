@@ -120,12 +120,18 @@ class InMemoryScheduler:
         ordinary booking, and recording it otherwise would inflate the very
         count the cap is meant to control.
         """
-        if self.repository.get(appointment.id) is not None:
-            raise ScheduleError(f"appointment already exists: {appointment.id}")
-        overbooked = self._validate_slot(appointment, allow_overbooking=allow_overbooking)
-        stored = replace(appointment, overbooked=overbooked)
         try:
-            self.repository.add(stored)
+            stored = self.repository.reserve(
+                appointment,
+                lambda existing: replace(
+                    appointment,
+                    overbooked=self._validate_slot(
+                        appointment,
+                        existing=existing,
+                        allow_overbooking=allow_overbooking,
+                    ),
+                ),
+            )
         except ValueError as exc:
             raise ScheduleError(str(exc)) from exc
         self._record(stored, from_status=None, actor=actor)
@@ -254,6 +260,7 @@ class InMemoryScheduler:
         appointment: Appointment,
         exclude_id: str | None = None,
         allow_overbooking: bool = False,
+        existing=None,
     ) -> bool:
         """Check a candidate slot; return whether it lands as an overbooking."""
         for resource_id in appointment.occupied_resource_ids:
@@ -269,7 +276,9 @@ class InMemoryScheduler:
         ):
             raise AppointmentUnavailable(appointment.id)
         policy = policy_for(appointment.resource_id, self.policies)
-        existing = [item for item in self.repository.list() if item.id != exclude_id]
+        if existing is None:
+            existing = self.repository.list()
+        existing = [item for item in existing if item.id != exclude_id]
         if not find_conflicts(appointment, existing, gap=policy.slot_interval):
             return False
         if not allow_overbooking:
