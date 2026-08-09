@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -54,8 +54,19 @@ def test_reminder_repository_list_sent_filters_by_date_range():
     reminders.mark_sent("apt-1", "24h", datetime(2026, 7, 19, 10))
     reminders.mark_sent("apt-2", "2h", datetime(2026, 7, 21, 8))
 
+    # `sent_at` vuelve AWARE en UTC, en los dos motores.
+    #
+    # Esta asercion pedia un datetime naive, que era lo que devolvia SQLite --
+    # y solo SQLite. `sent_at` era la unica de las cinco columnas con zona que
+    # no pasaba por `ensure_utc` al leer, asi que contra PostgreSQL este mismo
+    # repositorio ya devolvia un valor aware desde siempre. O sea que el test
+    # no estaba fijando el contrato del repositorio: estaba fijando el
+    # comportamiento de un backend. `UtcDateTime` (2026-08-09) los unifico.
+    #
+    # No rompe a los consumidores: Gestiolibra y MedLibra usan `list_sent`
+    # dentro de un `len()`, para contar recordatorios del periodo.
     in_range = reminders.list_sent(datetime(2026, 7, 19, 0), datetime(2026, 7, 19, 23, 59))
-    assert in_range == [("apt-1", "24h", datetime(2026, 7, 19, 10))]
+    assert in_range == [("apt-1", "24h", datetime(2026, 7, 19, 10, tzinfo=timezone.utc))]
 
     both = reminders.list_sent(datetime(2026, 7, 1, 0), datetime(2026, 7, 31, 23, 59))
     assert {item[:2] for item in both} == {("apt-1", "24h"), ("apt-2", "2h")}

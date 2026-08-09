@@ -5,8 +5,8 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import (
-    Date, DateTime, ForeignKey, Integer, Numeric, String, Text, Time, UniqueConstraint,
-    create_engine, select,
+    Date, DateTime, ForeignKey, Integer, Numeric, String, Text, Time, TypeDecorator,
+    UniqueConstraint, create_engine, select,
 )
 from sqlalchemy.orm import (
     DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker,
@@ -30,6 +30,51 @@ def ensure_utc(value: datetime) -> datetime:
     datetime regardless of which database is behind the repository.
     """
     return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+
+class UtcDateTime(TypeDecorator):
+    """`DateTime(timezone=True)` que guarda SIEMPRE el instante en UTC.
+
+    🔴 **El motivo, medido el 2026-08-09 contra los dos motores.** Sin esto,
+    escribir un turno a las `09:00-03:00` -- o sea las 12:00 UTC -- guardaba
+    **instantes distintos** segun el backend:
+
+    | Motor | Vuelve | Instante |
+    |---|---|---|
+    | PostgreSQL | `12:00+00:00` | correcto |
+    | SQLite | `09:00` naive, y `ensure_utc` le pone UTC encima | `09:00+00:00`, **corrido 3 horas** |
+
+    SQLite no tiene tipo con zona: SQLAlchemy le pasa el datetime tal cual y
+    se pierde el offset, con lo que queda guardada la hora de pared en vez del
+    instante. `ensure_utc` es correcto **al leer** -- un valor naive que salio
+    de esta columna esta en UTC -- pero no puede reparar un valor que se
+    guardo mal, porque para entonces el offset ya no existe.
+
+    Por eso la normalizacion va **al escribir**, y a nivel del tipo: son cinco
+    columnas en tres modulos, y hacerlo en cada call site deja fuera al
+    proximo que se agregue. `Appointment` no normaliza `starts_at` -- valida
+    ids y duracion y nada mas --, asi que lo que manda el llamador llega
+    intacto hasta aca.
+
+    Un datetime **naive** se toma como UTC, que es lo que ya hacian los dos
+    motores antes de este tipo: es el unico caso donde coincidian, y cambiarlo
+    moveria datos existentes.
+    """
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    def process_result_value(self, value: datetime | None, dialect) -> datetime | None:
+        if value is None:
+            return None
+        return ensure_utc(value)
 
 
 class BranchRow(Base):
@@ -103,8 +148,8 @@ class TimeBlockRow(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     resource_id: Mapped[str] = mapped_column(ForeignKey("resources.id"), index=True)
-    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    starts_at: Mapped[datetime] = mapped_column(UtcDateTime())
+    ends_at: Mapped[datetime] = mapped_column(UtcDateTime())
     reason: Mapped[str] = mapped_column(Text, default="")
 
 
@@ -126,7 +171,7 @@ class AppointmentRow(Base):
     resource_id: Mapped[str] = mapped_column(ForeignKey("resources.id"), index=True)
     service_id: Mapped[str] = mapped_column(ForeignKey("services.id"), index=True)
     client_id: Mapped[str] = mapped_column(ForeignKey("clients.id"), index=True)
-    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    starts_at: Mapped[datetime] = mapped_column(UtcDateTime(), index=True)
     duration_seconds: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(30), index=True)
     branch_id: Mapped[str | None] = mapped_column(
@@ -170,7 +215,7 @@ class AppointmentTransitionRow(Base):
     )
     from_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
     to_status: Mapped[str] = mapped_column(String(30), index=True)
-    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    at: Mapped[datetime] = mapped_column(UtcDateTime(), index=True)
     actor: Mapped[str | None] = mapped_column(String(200), nullable=True)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -182,7 +227,7 @@ class SentReminderRow(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     appointment_id: Mapped[str] = mapped_column(ForeignKey("appointments.id"), index=True)
     policy_id: Mapped[str] = mapped_column(String(100))
-    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime] = mapped_column(UtcDateTime())
 
 
 class DepositRow(Base):
