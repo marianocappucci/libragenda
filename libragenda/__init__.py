@@ -15,24 +15,35 @@ except Exception:
 from .domain import (
     Appointment,
     AppointmentStatus,
+    AppointmentTransition,
     Branch,
     Client,
     Availability,
     Holiday,
     Resource,
     Service,
+    first_time_at,
 )
 
 __all__ = [
     "Appointment",
     "AppointmentStatus",
+    "AppointmentTransition",
     "Availability",
     "Holiday",
     "Resource",
     "Service",
+    "first_time_at",
 ]
 
-from .scheduling import AvailabilityException, BranchMismatch, TimeBlock, check_resource_branch
+from .scheduling import (
+    AgendaPolicy,
+    AvailabilityException,
+    BranchMismatch,
+    TimeBlock,
+    check_resource_branch,
+    policy_for,
+)
 
 from .timezones import to_branch_local, to_utc, validate_timezone
 
@@ -53,6 +64,7 @@ from .application import (
     AppointmentUnavailable,
     InMemoryScheduler,
     InvalidTransition,
+    OverbookingLimitReached,
     ResourceBranchMismatch,
 )
 
@@ -71,10 +83,12 @@ from .repositories import (
     InMemoryAppointmentRepository,
     InMemoryDepositRepository,
     InMemorySentReminderRepository,
+    InMemoryTransitionLog,
     SentReminderRepository,
+    TransitionLogRepository,
 )
 
-from .sqlalchemy_repository import SqlAlchemyAppointmentRepository
+from .sqlalchemy_repository import SqlAlchemyAppointmentRepository, SqlAlchemyTransitionLog
 
 from .catalog_repository import SqlAlchemyCatalogRepository
 

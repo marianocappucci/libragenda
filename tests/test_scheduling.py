@@ -4,6 +4,7 @@ import pytest
 
 from libragenda import Appointment, AppointmentStatus, Availability, Holiday, Resource
 from libragenda.scheduling import (
+    AgendaPolicy,
     AvailabilityException,
     BranchMismatch,
     TimeBlock,
@@ -11,6 +12,7 @@ from libragenda.scheduling import (
     find_conflicts,
     intervals_overlap,
     is_appointment_available,
+    policy_for,
 )
 
 
@@ -115,3 +117,120 @@ def test_check_resource_branch_rejects_resource_without_any_branch():
                          branch_id="branch-1")
     with pytest.raises(BranchMismatch):
         check_resource_branch(scoped, Resource("resource-1", "Box 1"))
+
+
+# -- shared secondary resources --------------------------------------------
+
+
+def booking(identifier, resource_id, hour=10, duration=60, secondary=()):
+    return Appointment(identifier, resource_id, "service-1", "client-1",
+                       datetime(2026, 7, 20, hour), timedelta(minutes=duration),
+                       AppointmentStatus.CONFIRMED, secondary_resource_ids=secondary)
+
+
+def test_two_professionals_sharing_a_room_conflict():
+    booked = booking("first", "doctor-1", secondary=("room-2",))
+    candidate = booking("second", "doctor-9", secondary=("room-2",))
+
+    assert find_conflicts(candidate, [booked]) == [booked]
+
+
+def test_same_professional_in_different_rooms_still_conflicts():
+    # The primary resource alone is enough: a person cannot be in two places.
+    booked = booking("first", "doctor-1", secondary=("room-2",))
+    candidate = booking("second", "doctor-1", secondary=("room-8",))
+
+    assert find_conflicts(candidate, [booked]) == [booked]
+
+
+def test_different_professionals_in_different_rooms_do_not_conflict():
+    booked = booking("first", "doctor-1", secondary=("room-2",))
+    candidate = booking("second", "doctor-9", secondary=("room-8",))
+
+    assert find_conflicts(candidate, [booked]) == []
+
+
+def test_a_room_alone_is_enough_to_conflict_even_without_the_other_side_declaring_it():
+    # One booking takes the room as a secondary resource, the other has it as
+    # its primary one — the engine does not care which slot it sits in.
+    booked = booking("first", "doctor-1", secondary=("room-2",))
+    candidate = booking("second", "room-2")
+
+    assert find_conflicts(candidate, [booked]) == [booked]
+
+
+# -- the gap between appointments ------------------------------------------
+
+
+def test_back_to_back_appointments_are_fine_without_a_gap():
+    booked = booking("first", "doctor-1", hour=10, duration=60)
+    candidate = booking("second", "doctor-1", hour=11, duration=60)
+
+    assert find_conflicts(candidate, [booked]) == []
+
+
+def test_a_gap_rejects_an_appointment_that_merely_touches_the_previous_one():
+    booked = booking("first", "doctor-1", hour=10, duration=60)
+    candidate = booking("second", "doctor-1", hour=11, duration=60)
+
+    assert find_conflicts(candidate, [booked], gap=timedelta(minutes=10)) == [booked]
+
+
+def test_a_gap_accepts_an_appointment_that_clears_it():
+    booked = booking("first", "doctor-1", hour=10, duration=60)
+    candidate = booking("second", "doctor-1", hour=11, duration=60)
+    candidate = Appointment(
+        candidate.id, candidate.resource_id, candidate.service_id, candidate.client_id,
+        datetime(2026, 7, 20, 11, 10), candidate.duration, candidate.status,
+    )
+
+    assert find_conflicts(candidate, [booked], gap=timedelta(minutes=10)) == []
+
+
+# -- blocks reach every occupied resource ----------------------------------
+
+
+def test_a_blocked_room_makes_the_appointment_unavailable():
+    windows = [Availability("doctor-1", 0, time(9), time(18))]
+    maintenance = TimeBlock("room-2", datetime(2026, 7, 20, 9), datetime(2026, 7, 20, 13),
+                            reason="mantenimiento")
+    candidate = booking("apt", "doctor-1", secondary=("room-2",))
+
+    assert not is_appointment_available(candidate, windows, blocks=[maintenance])
+
+
+def test_a_secondary_resource_needs_no_weekly_window_of_its_own():
+    # Only the professional has opening hours; the room is a thing, not a
+    # schedule. If this ever required a window for the room, every booking
+    # with a room would be unavailable.
+    windows = [Availability("doctor-1", 0, time(9), time(18))]
+    candidate = booking("apt", "doctor-1", secondary=("room-2",))
+
+    assert is_appointment_available(candidate, windows)
+
+
+# -- agenda policies --------------------------------------------------------
+
+
+def test_policy_for_falls_back_to_a_permissive_default():
+    policy = policy_for("doctor-1", [AgendaPolicy("doctor-9", timedelta(minutes=10), 3)])
+
+    assert policy.resource_id == "doctor-1"
+    assert policy.slot_interval == timedelta(0)
+    assert policy.max_overbookings_per_day == 0
+
+
+def test_policy_for_finds_the_matching_resource():
+    policy = policy_for("doctor-1", [AgendaPolicy("doctor-1", timedelta(minutes=10), 3)])
+
+    assert policy.max_overbookings_per_day == 3
+
+
+@pytest.mark.parametrize("factory", [
+    lambda: AgendaPolicy(" "),
+    lambda: AgendaPolicy("doctor-1", slot_interval=timedelta(minutes=-1)),
+    lambda: AgendaPolicy("doctor-1", max_overbookings_per_day=-1),
+])
+def test_agenda_policy_rejects_invalid_values(factory):
+    with pytest.raises(ValueError):
+        factory()

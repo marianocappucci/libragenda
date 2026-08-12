@@ -1,11 +1,23 @@
 name: CI
 
 on:
+  # Sin `push` a ramas: `develop` y `main` estan protegidas (2026-08-11,
+  # `enforce_admins: true`), asi que todo entra por PR y el run del PR verifica
+  # el MERGE -- que es exactamente lo que queda en la rama. El push repetia esa
+  # misma verificacion sobre un arbol identico: medido, tres commits distintos
+  # con el mismo tree hash y hasta cuatro corridas por cambio.
   push:
-    branches: [main]
-    tags: ["v*"]
+    tags: ["v*"]   # dispara el release, no la verificacion
   pull_request:
-    branches: [main]
+    branches: [develop, main]
+
+# Una sola corrida viva por rama. Si entra un push nuevo mientras esta
+# corriendo, se cancela la anterior en vez de pagar las dos: su resultado ya
+# no le sirve a nadie, porque reporta sobre un codigo que no es el que quedo
+# en la rama.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -44,5 +56,82 @@ jobs:
       - name: Install package + dev deps
         run: pip install -e ".[dev]"
 
+      # Lint antes que los tests: tarda segundos y su rojo se lee mucho mas
+      # facil que el de una suite. El ruleset vive en pyproject.toml y esta
+      # CURADO para dar cero hallazgos hoy en los 12 repos de la familia --
+      # ver el comentario largo ahi. Un rojo aca es una regresion, no deuda.
+      - name: Lint (ruff)
+        run: ruff check .
+
+      # Que el gate de PostgreSQL no se saltee en silencio. `test_postgres_real`
+      # y `test_migrations` se auto-saltean sin `DATABASE_URL`, que es lo
+      # correcto para una corrida local -- pero en CI un salteo se lee como
+      # verde y el gate no estaria probando nada. Si el servicio no levanto,
+      # esto falla aca y lo dice, en vez de dejar pasar la suite entera.
+      - name: Verificar que el PostgreSQL del CI responde
+        run: |
+          python - <<'PY'
+          import os, sys
+          import psycopg
+          url = os.environ["DATABASE_URL"].replace("postgresql+psycopg://", "postgresql://", 1)
+          with psycopg.connect(url) as c:
+              v = c.execute("select version()").fetchone()[0]
+          print(v)
+          if "PostgreSQL" not in v:
+              sys.exit("el servicio no contesto como PostgreSQL")
+          PY
+
+      # `--cov` sin argumento toma el paquete de [tool.coverage.run] del
+      # pyproject. El piso (fail_under) tambien esta ahi: es un trinquete
+      # fijado 2 puntos debajo de lo medido el 2026-07-31, no una meta.
       - name: Run tests
-        run: pytest -v
+        run: pytest -v --cov --cov-report=term-missing
+
+      # Contraprueba del salteo: que los tests contra PostgreSQL real hayan
+      # CORRIDO. Un pytest que colecta cero por un skip sale con codigo 0 y se
+      # lee igual que un verde -- ya paso en esta familia, con un filtro que no
+      # matcheaba nada.
+      - name: Confirmar que el gate de PostgreSQL corrio
+        run: |
+          # `pipefail` porque el `tee` se come el codigo de salida de pytest:
+          # sin esto, un gate en rojo llega aca como exito.
+          set -o pipefail
+          pytest tests/test_postgres_real.py -q --no-cov -p no:cacheprovider \
+            | tee /tmp/pg_gate.txt
+
+          # Van como `if`, no como `grep ... && { exit 1; }`: con `set -e`, ese
+          # compound devuelve el fallo del grep cuando NO matchea -- o sea en el
+          # caso bueno -- y el paso se cae solo.
+          if ! grep -qE '[0-9]+ passed' /tmp/pg_gate.txt; then
+            echo "el gate de PostgreSQL no corrio ningun test"
+            exit 1
+          fi
+          if grep -q 'skipped' /tmp/pg_gate.txt; then
+            echo "el gate de PostgreSQL se salteo: falta DATABASE_URL"
+            exit 1
+          fi
+          echo "OK: el gate corrio contra PostgreSQL real"
+
+  # La otra mitad de la matriz de la F3. Este motor lo consumen Gestiolibra y
+  # MedLibra, que **hoy corren SQLite en produccion**: una suite que solo pase
+  # con el servicio PostgreSQL del CI arriba no dice nada sobre lo desplegado.
+  # Sin `DATABASE_URL` los tests que piden PostgreSQL se saltean y el resto
+  # corre sobre SQLite, que es la configuracion real de los productos.
+  test-sqlite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package + dev deps
+        run: pip install -e ".[dev]"
+
+      # Sin `DATABASE_URL` a proposito: es la unica diferencia con el job de
+      # arriba, y la unica razon por la que este job existe.
+      - name: Run tests (SQLite)
+        run: pytest -v --cov --cov-report=term-missing

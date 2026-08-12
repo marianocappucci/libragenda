@@ -168,3 +168,160 @@ Registro ADR. Las decisiones no se borran; si dejan de aplicar, se marcan como r
   guardar solo el par `(appointment_id, policy_id)` en un `set` a
   guardar también `sent_at` en un `dict` — necesario para que el
   adaptador en memoria pueda filtrar por rango igual que el real.
+
+---
+
+> **ADR-009 a ADR-013 salen de una misma decisión de alcance** (2026-08-04):
+> el reparto entre este motor y MedLibra para su sistema de agendas de salud,
+> bajo la regla **"LibraGenda es dueño de la ocupación del tiempo; el vertical,
+> de lo que le pasa a una persona durante la jornada"**. Los cinco son
+> aditivos y ninguno obliga a tocar Gestiolibra. Lo que quedó **afuera** por
+> esa misma regla: el eje asistencial de estados (sala de espera, llamado), las
+> especialidades, las coberturas y el llamador de pacientes — todo eso vive en
+> el vertical. Ver la página `medlibra-agendas-y-flujo-de-atencion` del wiki.
+
+## ADR-009 — El consultorio entra como recurso secundario genérico, no como entidad "sala"
+
+- Estado: aceptada
+- Fecha: 2026-08-04
+- Contexto: MedLibra necesita detectar que dos profesionales quedaron
+  agendados en el mismo consultorio a la misma hora. Hasta hoy un turno
+  ocupaba **exactamente un** `Resource`, y todo el motor colgaba de
+  `appointment.resource_id`: disponibilidad, bloqueos, excepciones,
+  chequeo de sucursal y solapamiento. Modelar el consultorio como un
+  `Resource` más no alcanzaba: el turno solo podía apuntar a uno de los
+  dos, así que se detectaba el choque de profesional o el de sala, nunca
+  los dos.
+- Decisión: `Appointment.secondary_resource_ids: tuple[str, ...] = ()`, y
+  `find_conflicts()` compara la **intersección** de los recursos ocupados
+  (`occupied_resource_ids`, primario + secundarios) en vez de
+  `resource_id ==`. **El motor no aprende la palabra "consultorio"**:
+  aprende que un turno puede ocupar más de un recurso, que es el mismo
+  problema de un box de taller, una estación de lavado o un equipo
+  compartido. Los atributos de sala (piso, sector, equipamiento,
+  especialidades permitidas) quedan en el vertical como fila de
+  extensión sobre `Resource` — mismo patrón que MedLibra ya usa para
+  `PatientRow` sobre `Client`.
+  - **Horarios y bloqueos se tratan distinto, a propósito**: las ventanas
+    semanales, feriados y excepciones se le piden **solo al recurso
+    primario** —una sala es una cosa, no una agenda, y exigirle ventana
+    horaria a un consultorio sería declararle jornada laboral a una
+    habitación—, pero los `TimeBlock` se chequean contra **todos** los
+    recursos ocupados. Eso hace que un consultorio en mantenimiento sea
+    inreservable **sin un solo concepto nuevo**: es el `TimeBlock` que ya
+    existía. Igual para la licencia de un profesional.
+  - `check_resource_branch` también pasa a correr sobre todos los
+    recursos ocupados: una sala de otra sede es tan inválida como un
+    profesional de otra sede.
+- Consecuencias: tabla `appointment_resources` (join, con `position` solo
+  para que la tupla vuelva en el orden en que se escribió) y migración
+  `0009`. Con la tupla vacía —el default— el comportamiento es
+  **idéntico** al anterior: los 120 tests previos pasaron sin tocar
+  ninguno. **Un bug real apareció acá y lo encontró un test**: reasignar
+  la colección entera en `save()` hace que SQLAlchemy inserte antes de
+  borrar los huérfanos, y un recurso presente antes y después choca
+  contra el unique `(appointment_id, resource_id)`; se reconcilia en el
+  lugar (`_sync_secondary_rows`), tocando solo lo que cambió.
+
+## ADR-010 — `start()` como verbo público
+
+- Estado: aceptada
+- Fecha: 2026-08-04
+- Contexto: la transición `confirmed` → `in_progress` existe en
+  `_ALLOWED_TRANSITIONS` desde el diseño original de la máquina de
+  estados, pero nunca tuvo método público — exactamente el mismo hueco de
+  superficie que tenía `complete()` antes de ADR-006. MedLibra lo
+  necesita para "iniciar atención".
+- Decisión: `InMemoryScheduler.start(appointment_id)` sobre el mismo
+  `_transition()` que los demás verbos. Sin `reason` (no es una
+  cancelación ni una reprogramación) y sin migración (`status` ya acepta
+  el valor).
+- Consecuencias: 3 tests nuevos, incluido el que fija que **no** se puede
+  arrancar un turno todavía sin confirmar. Cambio 100% aditivo.
+
+## ADR-011 — La auditoría es un registro de transiciones, y de ahí salen las marcas de tiempo
+
+- Estado: aceptada
+- Fecha: 2026-08-04
+- Contexto: el diseño de agendas pide auditoría (usuario, fecha, acción,
+  estado anterior, estado nuevo, motivo) y además tiempos reales de
+  atención — hora de inicio, hora de fin, duración real. La salida obvia
+  era sumar columnas `started_at`/`ended_at` al turno.
+- Decisión: **no** hay columnas de tiempo en el turno. Hay un registro
+  append-only de transiciones (`AppointmentTransition`,
+  `TransitionLogRepository`), y las marcas de tiempo se **leen** de ahí
+  con `first_time_at(transitions, status)`. Un estado y el instante en
+  que se alcanzó son el mismo hecho: guardarlos en dos lugares es
+  garantizar que alguna vez se contradigan. La creación del turno se
+  registra también, con `from_status` vacío — si no, lo primero que le
+  pasó a la reserva sería lo único ausente de su historia.
+  - `actor` es texto libre: el motor **no tiene noción de identidad** y no
+    valida contra ninguna tabla de usuarios. Cada consumidor nombra sus
+    usuarios como quiera.
+  - Una **reprogramación también se audita**, con `from_status` igual al
+    estado que conservó. Mover un turno merece quedar registrado aunque
+    no sea un cambio de estado; dejarlo afuera vuelve incontestable
+    "quién lo movió y cuándo".
+  - El scheduler recibe un `clock` inyectable, sin el cual la historia no
+    sería verificable en un test.
+- Consecuencias: tabla `appointment_transitions`, migración `0009`,
+  `InMemoryTransitionLog` y `SqlAlchemyTransitionLog`. El log **no tiene
+  update ni delete**: una historia editable no responde nada. El
+  scheduler siempre escribe —si no le pasan un adaptador usa el de
+  memoria—, así que `history()` funciona sin configurar nada.
+
+## ADR-012 — Vigencia en la disponibilidad e intervalo entre turnos
+
+- Estado: aceptada
+- Fecha: 2026-08-04
+- Contexto: `Availability` era una ventana semanal plana, sin noción de
+  desde cuándo y hasta cuándo rige. Cambiar el horario de un profesional
+  obligaba a borrar la ventana vieja, con lo cual la agenda perdía la
+  capacidad de explicar por qué un turno del mes pasado era válido. Y no
+  había forma de pedir aire entre pacientes.
+- Decisión: `Availability.valid_from`/`valid_to`, ambos opcionales e
+  independientes, inclusivos, chequeados en `contains()` vía
+  `applies_on()`. Sin ninguno de los dos la ventana rige siempre — que es
+  de lo que dependen todas las ventanas creadas antes de que esto
+  existiera. Y `AgendaPolicy(resource_id, slot_interval,
+  max_overbookings_per_day)` para las reglas de agenda que no son
+  horario: el intervalo ensancha el candidato de los dos lados en
+  `find_conflicts(gap=...)`.
+- Consecuencias: columnas `valid_from`/`valid_to` en `availability`, tabla
+  `agenda_policies`, migración `0009`. `policy_for()` devuelve un default
+  permisivo para todo recurso sin política, así que un consumidor que
+  nunca configure nada se comporta igual que antes.
+
+## ADR-013 — El sobreturno es overbooking autorizado, y vive en el motor
+
+- Estado: aceptada
+- Fecha: 2026-08-04
+- Contexto: el motor rechaza todo solapamiento con `AppointmentConflict`,
+  así que hoy un sobreturno es **imposible**, no incompleto. La tentación
+  era resolverlo en el vertical, insertando el turno por afuera del
+  scheduler.
+- Decisión: el motor es dueño de la regla de solapamiento, así que tiene
+  que ser dueño de su **excepción sancionada**:
+  `create(appointment, allow_overbooking=True)`, y lo mismo en
+  `reschedule()`. Si quedara en el vertical, MedLibra tendría que
+  **esquivar el motor** para crear un sobreturno — justo el agujero en la
+  validación que este diseño quiere evitar.
+  - `allow_overbooking` relaja **solo** la regla de conflicto. Nunca
+    horarios, feriados ni bloqueos: un sobreturno se mete apretado en un
+    día de trabajo, no en un día franco.
+  - El turno guardado queda con `overbooked=True` **solo si realmente se
+    superpuso con algo**. Pedir permiso para sobreturnear y no
+    necesitarlo es una reserva común; marcarla igual inflaría el mismo
+    conteo que el tope quiere controlar.
+  - El tope diario sale de `AgendaPolicy.max_overbookings_per_day`, y su
+    default es **0** — una agenda que nunca dijo aceptar sobreturnos no
+    debería empezar a aceptarlos en silencio. Por eso pedir
+    `allow_overbooking=True` sin política configurada levanta
+    `OverbookingLimitReached`, que es distinto de `AppointmentConflict`:
+    uno dice "está ocupado y no pediste sobreturnear", el otro "pediste, y
+    la agenda ya tuvo suficiente por hoy".
+  - Quién lo autorizó y por qué es **del vertical**: el motor guarda que
+    fue deliberado, no la justificación.
+- Consecuencias: columna `appointments.overbooked`, migración `0009`, 10
+  tests nuevos incluyendo que un sobreturno cancelado libera lugar bajo el
+  tope y que el tope se cuenta por día.

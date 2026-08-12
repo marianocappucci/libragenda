@@ -1,10 +1,16 @@
-from datetime import date, time
+from datetime import date, time, timedelta
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from libragenda import Availability, AvailabilityException, SqlAlchemyAvailabilityRepository, TimeBlock
+from libragenda import (
+    AgendaPolicy,
+    Availability,
+    AvailabilityException,
+    SqlAlchemyAvailabilityRepository,
+    TimeBlock,
+)
 from libragenda.sqlalchemy_repository import Base
 
 
@@ -87,3 +93,49 @@ def test_exception_crud_round_trip(repo: SqlAlchemyAvailabilityRepository):
     assert repo.get_exception(exception_id) is None
     with pytest.raises(KeyError):
         repo.delete_exception(exception_id)
+
+
+def test_availability_validity_round_trips(repo: SqlAlchemyAvailabilityRepository):
+    dated = Availability("resource-1", weekday=1, starts_at=time(9, 0), ends_at=time(12, 0),
+                         valid_from=date(2026, 7, 1), valid_to=date(2026, 7, 31))
+    availability_id = repo.add_availability(dated)
+
+    assert repo.get_availability(availability_id) == dated
+
+    reopened = Availability("resource-1", weekday=1, starts_at=time(9, 0), ends_at=time(12, 0),
+                            valid_from=date(2026, 8, 1))
+    repo.update_availability(availability_id, reopened)
+    stored = repo.get_availability(availability_id)
+    assert stored.valid_from == date(2026, 8, 1)
+    assert stored.valid_to is None
+
+
+def test_availability_without_validity_round_trips_as_unbounded(
+    repo: SqlAlchemyAvailabilityRepository,
+):
+    availability_id = repo.add_availability(
+        Availability("resource-1", weekday=1, starts_at=time(9, 0), ends_at=time(12, 0))
+    )
+
+    stored = repo.get_availability(availability_id)
+    assert (stored.valid_from, stored.valid_to) == (None, None)
+
+
+def test_agenda_policy_crud_round_trip(repo: SqlAlchemyAvailabilityRepository):
+    policy = AgendaPolicy("resource-1", slot_interval=timedelta(minutes=10),
+                          max_overbookings_per_day=2)
+    repo.set_policy(policy)
+
+    assert repo.get_policy("resource-1") == policy
+    assert repo.list_policies() == (policy,)
+
+    # Setting it again replaces rather than duplicating: one agenda, one policy.
+    repo.set_policy(AgendaPolicy("resource-1", slot_interval=timedelta(minutes=5),
+                                 max_overbookings_per_day=0))
+    assert len(repo.list_policies()) == 1
+    assert repo.get_policy("resource-1").slot_interval == timedelta(minutes=5)
+
+    repo.delete_policy("resource-1")
+    assert repo.get_policy("resource-1") is None
+    with pytest.raises(KeyError):
+        repo.delete_policy("resource-1")

@@ -36,3 +36,12 @@ id_ed25519*
 data/
 logs/
 *.log
+# Artefactos de cobertura (agregado 2026-07-31, junto con el paso de coverage
+# en el CI). Son salida de la herramienta, se regeneran en cada corrida y el
+# .coverage es un binario de ~100-250 KB: no van al repo.
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+coverage/
+frontend/coverage/

@@ -1,8 +1,10 @@
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
+from threading import Barrier, Thread
 
 import pytest
 
 from libragenda import (
+    AgendaPolicy,
     Appointment,
     AppointmentConflict,
     AppointmentStatus,
@@ -11,9 +13,11 @@ from libragenda import (
     Holiday,
     InMemoryScheduler,
     InvalidTransition,
+    OverbookingLimitReached,
     RecurrenceRule,
     Resource,
     ResourceBranchMismatch,
+    first_time_at,
     generate_occurrences,
 )
 
@@ -178,3 +182,368 @@ def test_cancel_series_skips_occurrences_already_closed_out(scheduler):
 
     assert len(cancelled) == 1
     assert cancelled[0].id == occurrences[1].id
+
+
+# -- start() ----------------------------------------------------------------
+
+
+def test_start_moves_a_confirmed_appointment_to_in_progress(scheduler):
+    scheduler.create(make_appointment())
+    scheduler.confirm("apt-1")
+
+    assert scheduler.start("apt-1").status is AppointmentStatus.IN_PROGRESS
+
+
+def test_start_is_refused_before_the_appointment_is_confirmed(scheduler):
+    scheduler.create(make_appointment())
+
+    with pytest.raises(InvalidTransition):
+        scheduler.start("apt-1")
+
+
+def test_a_started_appointment_can_only_be_completed(scheduler):
+    scheduler.create(make_appointment())
+    scheduler.confirm("apt-1")
+    scheduler.start("apt-1")
+
+    with pytest.raises(InvalidTransition):
+        scheduler.cancel("apt-1")
+    assert scheduler.complete("apt-1").status is AppointmentStatus.COMPLETED
+
+
+# -- transition history -----------------------------------------------------
+
+
+class FakeClock:
+    """Hands out fixed, increasing instants so the log is assertable."""
+
+    def __init__(self):
+        self.now = datetime(2026, 7, 20, 9, tzinfo=timezone.utc)
+
+    def __call__(self):
+        self.now += timedelta(minutes=1)
+        return self.now
+
+
+@pytest.fixture
+def logged_scheduler():
+    return InMemoryScheduler(
+        [Availability("resource-1", 0, time(9), time(18))], clock=FakeClock()
+    )
+
+
+def test_creating_an_appointment_is_itself_recorded(logged_scheduler):
+    logged_scheduler.create(make_appointment(), actor="recepcion")
+
+    history = logged_scheduler.history("apt-1")
+
+    assert len(history) == 1
+    assert history[0].from_status is None
+    assert history[0].to_status is AppointmentStatus.PENDING
+    assert history[0].actor == "recepcion"
+
+
+def test_history_records_every_step_in_order(logged_scheduler):
+    logged_scheduler.create(make_appointment(), actor="recepcion")
+    logged_scheduler.confirm("apt-1", actor="recepcion")
+    logged_scheduler.start("apt-1", actor="dr-perez")
+    logged_scheduler.complete("apt-1", actor="dr-perez")
+
+    steps = [(item.from_status, item.to_status) for item in logged_scheduler.history("apt-1")]
+
+    assert steps == [
+        (None, AppointmentStatus.PENDING),
+        (AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED),
+        (AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS),
+        (AppointmentStatus.IN_PROGRESS, AppointmentStatus.COMPLETED),
+    ]
+
+
+def test_attention_times_are_read_from_the_history(logged_scheduler):
+    logged_scheduler.create(make_appointment())
+    logged_scheduler.confirm("apt-1")
+    logged_scheduler.start("apt-1")
+    logged_scheduler.complete("apt-1")
+
+    history = logged_scheduler.history("apt-1")
+    started = first_time_at(history, AppointmentStatus.IN_PROGRESS)
+    finished = first_time_at(history, AppointmentStatus.COMPLETED)
+
+    # The clock ticks a minute per call: started on the 3rd, finished on the
+    # 4th. No column on the appointment holds either instant.
+    assert finished - started == timedelta(minutes=1)
+
+
+def test_a_cancellation_records_its_reason_and_actor(logged_scheduler):
+    logged_scheduler.create(make_appointment())
+    logged_scheduler.cancel("apt-1", reason="el paciente avisó", actor="recepcion")
+
+    last = logged_scheduler.history("apt-1")[-1]
+
+    assert last.to_status is AppointmentStatus.CANCELLED
+    assert last.reason == "el paciente avisó"
+    assert last.actor == "recepcion"
+
+
+def test_a_reschedule_is_audited_even_though_the_status_does_not_change(logged_scheduler):
+    logged_scheduler.create(make_appointment())
+    logged_scheduler.reschedule(
+        "apt-1", datetime(2026, 7, 20, 12), reason="pidió más tarde", actor="recepcion"
+    )
+
+    last = logged_scheduler.history("apt-1")[-1]
+
+    assert (last.from_status, last.to_status) == (
+        AppointmentStatus.PENDING, AppointmentStatus.PENDING,
+    )
+    assert last.reason == "pidió más tarde"
+
+
+def test_history_is_per_appointment(logged_scheduler):
+    logged_scheduler.create(make_appointment("apt-1"))
+    logged_scheduler.create(make_appointment("apt-2", hour=12))
+
+    assert len(logged_scheduler.history("apt-1")) == 1
+    assert logged_scheduler.history("apt-3") == []
+
+
+# -- authorized overbooking -------------------------------------------------
+
+
+@pytest.fixture
+def overbookable():
+    return InMemoryScheduler(
+        [Availability("resource-1", 0, time(9), time(18))],
+        policies=[AgendaPolicy("resource-1", max_overbookings_per_day=1)],
+    )
+
+
+def test_an_overlap_is_still_refused_when_nobody_asked_to_overbook(overbookable):
+    overbookable.create(make_appointment("first"))
+
+    with pytest.raises(AppointmentConflict):
+        overbookable.create(make_appointment("second"))
+
+
+def test_an_authorized_overbooking_is_accepted_and_marked(overbookable):
+    overbookable.create(make_appointment("first"))
+
+    extra = overbookable.create(make_appointment("second"), allow_overbooking=True)
+
+    assert extra.overbooked is True
+    assert overbookable.get("second").overbooked is True
+
+
+def test_the_cap_stops_the_next_overbooking_of_the_day(overbookable):
+    overbookable.create(make_appointment("first"))
+    overbookable.create(make_appointment("second"), allow_overbooking=True)
+
+    with pytest.raises(OverbookingLimitReached):
+        overbookable.create(make_appointment("third"), allow_overbooking=True)
+
+
+def test_an_agenda_that_never_opted_in_refuses_overbooking_outright():
+    scheduler = InMemoryScheduler([Availability("resource-1", 0, time(9), time(18))])
+    scheduler.create(make_appointment("first"))
+
+    with pytest.raises(OverbookingLimitReached):
+        scheduler.create(make_appointment("second"), allow_overbooking=True)
+
+
+def test_asking_to_overbook_without_overlapping_is_an_ordinary_booking(overbookable):
+    # Otherwise a permissive caller would burn the day's cap on bookings that
+    # never competed with anything.
+    booked = overbookable.create(make_appointment("first"), allow_overbooking=True)
+
+    assert booked.overbooked is False
+
+
+def test_the_cap_counts_only_the_day_it_applies_to(overbookable):
+    overbookable.create(make_appointment("first"))
+    overbookable.create(make_appointment("second"), allow_overbooking=True)
+    # A week later, same weekday and hour: the cap starts over.
+    next_monday = Appointment("third", "resource-1", "service-1", "client-1",
+                              datetime(2026, 7, 27, 10), timedelta(minutes=45))
+    overbookable.create(next_monday)
+
+    fourth = Appointment("fourth", "resource-1", "service-1", "client-1",
+                         datetime(2026, 7, 27, 10), timedelta(minutes=45))
+    assert overbookable.create(fourth, allow_overbooking=True).overbooked is True
+
+
+def test_a_cancelled_overbooking_frees_room_under_the_cap(overbookable):
+    overbookable.create(make_appointment("first"))
+    overbookable.create(make_appointment("second"), allow_overbooking=True)
+    overbookable.cancel("second")
+
+    assert overbookable.create(
+        make_appointment("third"), allow_overbooking=True
+    ).overbooked is True
+
+
+def test_overbooking_does_not_open_a_closed_agenda(overbookable):
+    # It relaxes the conflict rule and nothing else: 19h is outside the window.
+    with pytest.raises(AppointmentUnavailable):
+        overbookable.create(make_appointment("late", hour=19), allow_overbooking=True)
+
+
+class SnapshotBarrierRepository:
+    """Force two callers to validate against the same pre-write snapshot."""
+
+    def __init__(self):
+        from libragenda.repositories import InMemoryAppointmentRepository
+
+        self._repository = InMemoryAppointmentRepository()
+        self._barrier = Barrier(2)
+        self._list_calls = 0
+
+    def add(self, appointment):
+        return self._repository.add(appointment)
+
+    def get(self, appointment_id):
+        return self._repository.get(appointment_id)
+
+    def save(self, appointment):
+        return self._repository.save(appointment)
+
+    def list(self):
+        snapshot = tuple(self._repository.list())
+        self._list_calls += 1
+        if self._list_calls <= 2:
+            self._barrier.wait(timeout=5)
+        return snapshot
+
+    def reserve(self, appointment, validator):
+        if appointment.id.startswith(("apt-", "over-")):
+            self._barrier.wait(timeout=5)
+        return self._repository.reserve(appointment, validator)
+
+
+def test_concurrent_same_slot_is_serialized_by_repository():
+    repository = SnapshotBarrierRepository()
+    schedulers = [
+        InMemoryScheduler(
+            [Availability("resource-1", 0, time(9), time(18))], repository=repository
+        )
+        for _ in range(2)
+    ]
+    results, errors = [], []
+
+    def create(scheduler, identifier):
+        try:
+            results.append(scheduler.create(make_appointment(identifier)))
+        except Exception as exc:  # pragma: no cover - assertion below names it
+            errors.append(exc)
+
+    threads = [Thread(target=create, args=(scheduler, f"apt-{index}"))
+               for index, scheduler in enumerate(schedulers)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert len(results) == 1
+    assert len(errors) == 1
+    assert isinstance(errors[0], AppointmentConflict)
+
+
+def test_concurrent_overbookings_respect_the_daily_cap():
+    repository = SnapshotBarrierRepository()
+    schedulers = [
+        InMemoryScheduler(
+            [Availability("resource-1", 0, time(9), time(18))],
+            repository=repository,
+            policies=[AgendaPolicy("resource-1", max_overbookings_per_day=1)],
+        )
+        for _ in range(2)
+    ]
+    # Seed the ordinary booking outside the race; both candidates then need
+    # the same single remaining overbooking slot.
+    schedulers[0].create(make_appointment("base"))
+    results, errors = [], []
+
+    def create(scheduler, identifier):
+        try:
+            results.append(
+                scheduler.create(make_appointment(identifier), allow_overbooking=True)
+            )
+        except Exception as exc:  # pragma: no cover - assertion below names it
+            errors.append(exc)
+
+    threads = [Thread(target=create, args=(scheduler, f"over-{index}"))
+               for index, scheduler in enumerate(schedulers)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert len(results) == 1
+    assert results[0].overbooked is True
+    assert len(errors) == 1
+    assert isinstance(errors[0], OverbookingLimitReached)
+
+
+# -- the agenda gap, through the scheduler ----------------------------------
+
+
+def test_the_agenda_interval_rejects_a_booking_that_does_not_clear_it():
+    scheduler = InMemoryScheduler(
+        [Availability("resource-1", 0, time(9), time(18))],
+        policies=[AgendaPolicy("resource-1", slot_interval=timedelta(minutes=15))],
+    )
+    scheduler.create(make_appointment("first", hour=10))
+
+    # The first one ends at 10:45; starting at 10:50 leaves 5 of the 15
+    # minutes the policy demands, so it does not fit.
+    second = Appointment("second", "resource-1", "service-1", "client-1",
+                         datetime(2026, 7, 20, 10, 50), timedelta(minutes=45))
+    with pytest.raises(AppointmentConflict):
+        scheduler.create(second)
+
+
+# -- secondary resources, through the scheduler ------------------------------
+
+
+def test_the_scheduler_refuses_two_professionals_in_one_room():
+    scheduler = InMemoryScheduler([
+        Availability("doctor-1", 0, time(9), time(18)),
+        Availability("doctor-9", 0, time(9), time(18)),
+    ])
+    scheduler.create(Appointment("first", "doctor-1", "service-1", "client-1",
+                                 datetime(2026, 7, 20, 10), timedelta(minutes=45),
+                                 secondary_resource_ids=("room-2",)))
+
+    clash = Appointment("second", "doctor-9", "service-1", "client-2",
+                        datetime(2026, 7, 20, 10), timedelta(minutes=45),
+                        secondary_resource_ids=("room-2",))
+    with pytest.raises(AppointmentConflict):
+        scheduler.create(clash)
+
+
+def test_the_same_room_is_free_once_the_first_appointment_ends():
+    scheduler = InMemoryScheduler([
+        Availability("doctor-1", 0, time(9), time(18)),
+        Availability("doctor-9", 0, time(9), time(18)),
+    ])
+    scheduler.create(Appointment("first", "doctor-1", "service-1", "client-1",
+                                 datetime(2026, 7, 20, 10), timedelta(minutes=45),
+                                 secondary_resource_ids=("room-2",)))
+
+    later = Appointment("second", "doctor-9", "service-1", "client-2",
+                        datetime(2026, 7, 20, 11), timedelta(minutes=45),
+                        secondary_resource_ids=("room-2",))
+    assert scheduler.create(later).secondary_resource_ids == ("room-2",)
+
+
+def test_a_room_from_another_branch_is_refused():
+    scheduler = InMemoryScheduler(
+        [Availability("doctor-1", 0, time(9), time(18))],
+        resources=[Resource("doctor-1", "Dra. Gómez", branch_id="branch-1"),
+                   Resource("room-2", "Consultorio 2", branch_id="branch-9")],
+    )
+
+    crossed = Appointment("apt-1", "doctor-1", "service-1", "client-1",
+                          datetime(2026, 7, 20, 10), timedelta(minutes=45),
+                          branch_id="branch-1", secondary_resource_ids=("room-2",))
+    with pytest.raises(ResourceBranchMismatch):
+        scheduler.create(crossed)

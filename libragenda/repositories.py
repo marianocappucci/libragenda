@@ -1,10 +1,10 @@
 """Storage ports and in-memory adapters for LibraGenda."""
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import datetime
 from typing import Protocol
 
-from .domain import Appointment
+from .domain import Appointment, AppointmentTransition
 from .payments import Deposit, DepositStatus
 
 
@@ -19,17 +19,25 @@ class AppointmentRepository(Protocol):
 
     def list(self) -> Iterable[Appointment]: ...
 
+    def reserve(
+        self, appointment: Appointment, validator: Callable[[Iterable[Appointment]], Appointment]
+    ) -> Appointment: ...
+
 
 class InMemoryAppointmentRepository:
     """Reference adapter for tests and local development."""
 
     def __init__(self) -> None:
+        from threading import RLock
+
         self._items: dict[str, Appointment] = {}
+        self._lock = RLock()
 
     def add(self, appointment: Appointment) -> None:
-        if appointment.id in self._items:
-            raise ValueError(f"appointment already exists: {appointment.id}")
-        self._items[appointment.id] = appointment
+        with self._lock:
+            if appointment.id in self._items:
+                raise ValueError(f"appointment already exists: {appointment.id}")
+            self._items[appointment.id] = appointment
 
     def get(self, appointment_id: str) -> Appointment | None:
         return self._items.get(appointment_id)
@@ -41,6 +49,41 @@ class InMemoryAppointmentRepository:
 
     def list(self) -> Iterable[Appointment]:
         return tuple(self._items.values())
+
+    def reserve(
+        self, appointment: Appointment, validator: Callable[[Iterable[Appointment]], Appointment]
+    ) -> Appointment:
+        with self._lock:
+            if appointment.id in self._items:
+                raise ValueError(f"appointment already exists: {appointment.id}")
+            result = validator(tuple(self._items.values()))
+            self._items[result.id] = result
+            return result
+
+
+class TransitionLogRepository(Protocol):
+    """Port for the append-only history of appointment status changes."""
+
+    def record(self, transition: AppointmentTransition) -> None: ...
+
+    def list_for(self, appointment_id: str) -> list[AppointmentTransition]: ...
+
+
+class InMemoryTransitionLog:
+    """Reference adapter for tests and local development.
+
+    Append-only on purpose: there is no update and no delete, because a
+    history that can be edited answers nothing.
+    """
+
+    def __init__(self) -> None:
+        self._items: list[AppointmentTransition] = []
+
+    def record(self, transition: AppointmentTransition) -> None:
+        self._items.append(transition)
+
+    def list_for(self, appointment_id: str) -> list[AppointmentTransition]:
+        return [item for item in self._items if item.appointment_id == appointment_id]
 
 
 class SentReminderRepository(Protocol):
