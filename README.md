@@ -13,11 +13,11 @@ consultorio, una cabina, una máquina o cualquier otra cosa reservable.
 
 Primera API de dominio definida, sin persistencia ni framework. Incluye
 `Resource`, `Service`, `Availability`, `Appointment` y `AppointmentStatus`.
-La persistencia usa SQLAlchemy 2, con **SQLite como destino de producción
-por defecto** para toda la familia Libra (silo: una instancia por
-cliente — ver `DECISIONS.md` ADR-005) y PostgreSQL disponible como
-opción para el caso puntual que lo amerite. `configure(url)` activa
-`PRAGMA foreign_keys=ON` automáticamente en cualquier conexión SQLite. El
+La persistencia usa SQLAlchemy 2. PostgreSQL es el destino recomendado
+para los despliegues de producción; SQLite queda disponible para desarrollo
+local y casos simples de una instancia por cliente. `configure(url)` acepta
+ambos motores y activa `PRAGMA foreign_keys=ON` automáticamente en conexiones
+SQLite. El
 esquema mínimo actual contiene la tabla `appointments`; el repositorio
 recibe una `sessionmaker` y los casos de uso continúan sin conocer
 SQLAlchemy.
