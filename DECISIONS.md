@@ -325,3 +325,50 @@ Registro ADR. Las decisiones no se borran; si dejan de aplicar, se marcan como r
 - Consecuencias: columna `appointments.overbooked`, migración `0009`, 10
   tests nuevos incluyendo que un sobreturno cancelado libera lugar bajo el
   tope y que el tope se cuenta por día.
+
+## ADR-014 — Las migraciones viajan en el paquete, y el deploy de un consumidor no puede clonar
+
+- Estado: aceptada. **Reemplaza la decisión del 2026-07-18** que las dejaba
+  fuera del wheel (documentada en `CONVENTIONS.md`).
+- Fecha: 2026-08-24
+- Contexto: aquella decisión decía *"el deploy pipeline de cada consumidor
+  clona el repo, no se agrega `migrations/` al wheel"*, para no tener dos
+  fuentes de verdad del mismo artefacto. El argumento era razonable. **El
+  supuesto era falso:** el deploy de un consumidor no es un pipeline con git —
+  es un contenedor, sin repo que clonar, sin git instalado y sin red saliente
+  garantizada. `scripts/run_migrations.sh` sólo podía correr donde ya había un
+  checkout, o sea en el CI.
+- **Lo que costó, medido el 2026-08-24 en el VPS:** ni Gestiolibra ni MedLibra
+  tenían las migraciones aplicadas en **ninguna** instancia — ni siquiera la
+  tabla `alembic_version`. Su esquema lo creaba `Base.metadata.create_all()` al
+  arrancar. El CI de los dos sí las corría, clonando, así que su verde no decía
+  nada sobre lo desplegado. Es el mismo patrón que la familia ya conocía como
+  "el mecanismo que nadie invoca", con el agravante de que acá **no se podía**
+  invocar desde donde hacía falta.
+- Decisión: `migrations/` pasa a `libragenda/migrations/` —adentro del
+  paquete, que es lo que la mete en `packages = ["libragenda"]`— y se agrega
+  `libragenda/migrar.py` con un comando de consola, `libragenda-migrar`.
+- **`script_location` se resuelve desde `__file__`, no desde el cwd.** Es la
+  diferencia entre andar en el repo y andar en `site-packages`: un
+  `alembic.ini` con ruta relativa sólo funciona parado en la raíz del repo, que
+  es justo donde el contenedor no está.
+- `scripts/run_migrations.sh` **se conserva** para el caso que lo justifica:
+  aplicar un tag distinto del instalado sin tocar el entorno. Deja de ser el
+  camino normal.
+- **Dos defectos aparecieron construyendo esto, y los dos los encontró correr
+  el end-to-end contra una base real — no los tests unitarios:**
+  1. `postgresql://` a secas resuelve a **psycopg2**, que este paquete no
+     declara: el consumidor recibía `ModuleNotFoundError` y el mensaje mandaba
+     a instalar el driver equivocado. Se normaliza a `postgresql+psycopg://`.
+  2. `env.py` prefería `DATABASE_URL` del entorno por sobre el `Config`, así
+     que el argumento explícito de `upgrade(url)` **se ignoraba en silencio**:
+     con la variable puesta migraba la base del entorno y devolvía éxito. Se
+     agregó la opción `libragenda.url`, que gana sobre las dos.
+
+  > 🔑 Los tests unitarios pasaban **con los dos defectos puestos**, porque
+  > afirmaban sobre el valor que el módulo *setea* y no sobre el que alembic
+  > *usa*. El test que los destapó es el que migra una base de verdad.
+- Consecuencias: `[project.scripts]` nuevo, `build` sumado a las dependencias
+  de dev —sin él, el test que verifica que las migraciones viajan en el wheel
+  se **saltea**, y un skip se lee igual que un verde— y 13 tests nuevos,
+  incluido uno que abre el `.whl` construido y mira adentro.
