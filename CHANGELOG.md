@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+- **Las migraciones viajan en el paquete** (ADR-014). `migrations/` pasó a
+  `libragenda/migrations/` y se aplican con el comando que instala el propio
+  paquete: `DATABASE_URL=… libragenda-migrar upgrade`.
+
+  🔴 **Revierte la decisión del 2026-07-18**, que las dejaba fuera del wheel
+  asumiendo que el deploy de un consumidor podía clonar el repo. No puede: es
+  un contenedor. El costo, medido el 2026-08-24: ni Gestiolibra ni MedLibra
+  tenían las migraciones aplicadas en ninguna instancia, ni la tabla
+  `alembic_version`.
+
+  `scripts/run_migrations.sh` se conserva para aplicar un tag distinto del
+  instalado; deja de ser el camino normal. Se arreglaron además dos cosas que
+  sólo se ven corriendo contra una base real: `postgresql://` a secas resolvía
+  a psycopg2 (que el paquete no declara), y el argumento explícito de
+  `upgrade(url)` se ignoraba en silencio cuando `DATABASE_URL` estaba puesta.
+
 ## v0.9.0 — 2026-07-22
 
 - **`SentReminderRepository.list_sent(date_from, date_to)`** y

@@ -35,23 +35,46 @@
   producto/entorno, nunca schema compartido.
 - `alembic upgrade head` antes de iniciar el consumidor.
 - Versiones de LibraGenda por tags SemVer; consumidores pinean tags exactos.
-- **Las migraciones no viajan en el paquete pip.** `pyproject.toml` solo
-  empaqueta el paquete `libragenda/` (`[tool.hatch.build.targets.wheel]
-  packages = ["libragenda"]`); `migrations/` queda fuera del wheel. Un
-  consumidor que solo hace `pip install libragenda@vX.Y.Z` no tiene acceso a
-  `migrations/` desde el paquete instalado.
-- **Decisión (2026-07-18): el deploy pipeline de cada consumidor clona el
-  repo, no se agrega `migrations/` al wheel.** Duplicar el empaquetado
-  (wheel + repo) para lo mismo agrega una segunda fuente de verdad para un
-  problema ya resuelto por el propio versionado en Git; clonar en el tag
-  exacto que el consumidor ya pinea es más simple y no requiere tocar
-  `pyproject.toml`.
-- `scripts/run_migrations.sh` es la forma reproducible de aplicar esto: dado
-  `LIBRAGENDA_REF` (tag) y `DATABASE_URL`, clona el repo en ese tag a un
-  directorio temporal, instala el paquete en un venv descartable y corre
-  `alembic upgrade head` contra la base indicada. Cada consumidor lo invoca
-  como paso explícito de su propio pipeline de deploy, antes de levantar la
-  API -- reemplaza el sync manual por rsync que se usaba en dev.
-- `migrations/env.py` lee `DATABASE_URL` del entorno si está seteada (con
-  fallback a `sqlalchemy.url` de `alembic.ini`), así el script no necesita
-  editar `alembic.ini` por consumidor.
+- **Las migraciones SÍ viajan en el paquete pip, desde la `v0.10.0`.** Viven en
+  `libragenda/migrations/` —adentro del paquete, que es lo que las mete en
+  `[tool.hatch.build.targets.wheel] packages = ["libragenda"]`— y se aplican con
+  el comando de consola que instala el propio paquete:
+
+  ```
+  DATABASE_URL=... libragenda-migrar upgrade
+  ```
+
+  También `python -m libragenda.migrar`, o `from libragenda.migrar import
+  upgrade` desde código. El detalle está en `libragenda/migrar.py`.
+
+  > 🔴 **Esto revierte la decisión del 2026-07-18**, que decía *"el deploy
+  > pipeline de cada consumidor clona el repo, no se agrega `migrations/` al
+  > wheel"* para no duplicar el empaquetado. El argumento era razonable y el
+  > supuesto era falso: **el deploy de un consumidor no es un pipeline con git,
+  > es un contenedor** — sin repo que clonar, sin git instalado y sin red
+  > saliente garantizada.
+  >
+  > Lo que costó, medido el 2026-08-24: **ninguna instancia de Gestiolibra ni de
+  > MedLibra tenía las migraciones aplicadas**, ni siquiera la tabla
+  > `alembic_version`. Su esquema lo creaba `Base.metadata.create_all()` al
+  > arrancar. El CI sí las corría —clonando— así que su verde no decía nada
+  > sobre lo desplegado.
+
+- `scripts/run_migrations.sh` **sigue existiendo** para el caso que lo
+  justifica: aplicar las migraciones de un tag **distinto** del instalado sin
+  tocar el entorno. **No es el camino normal.** El normal es
+  `libragenda-migrar`, que usa lo que el consumidor ya tiene instalado y por lo
+  tanto no se puede desincronizar del pin.
+- `libragenda/migrations/env.py` resuelve la base en este orden:
+  **`libragenda.url`** del `Config` (la que pone `migrar.configuracion()` cuando
+  se le pasa explícita) → `DATABASE_URL` del entorno → `sqlalchemy.url` del
+  `alembic.ini`.
+
+  > 🔴 La primera existe porque sin ella el argumento explícito **se ignoraba en
+  > silencio**: `DATABASE_URL` ganaba siempre, así que
+  > `migrar.upgrade("…/otra_base")` con la variable puesta migraba la del
+  > entorno y devolvía éxito.
+- El driver se normaliza: `postgresql://` → `postgresql+psycopg://`. Este
+  paquete declara psycopg **3** y nada más, y SQLAlchemy resuelve el prefijo
+  pelado a psycopg2 — el error resultante manda a instalar el driver
+  equivocado. Un `postgresql+psycopg2://` explícito se respeta.

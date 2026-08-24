@@ -3,10 +3,21 @@
 # consumidor (Gestiolibra, MedLibra, etc.), clonando el repo en el tag
 # exacto pineado por ese consumidor.
 #
-# Las migraciones no viajan en el wheel de pip (ver CONVENTIONS.md, seccion
-# "Configuracion y deploy") -- este script es la forma reproducible de
-# aplicarlas en cualquier pipeline de deploy, en lugar de sincronizar un
-# checkout local a mano.
+# ⚠️ ESTE NO ES EL CAMINO NORMAL, desde la v0.10.0.
+#
+# Las migraciones AHORA viajan en el paquete (`libragenda/migrations/`), asi que
+# lo habitual es correr, dentro del entorno del consumidor:
+#
+#     DATABASE_URL=... libragenda-migrar upgrade
+#
+# Eso usa lo que el consumidor YA tiene instalado, con lo cual no se puede
+# desincronizar del pin. Este script queda para el caso que si lo justifica:
+# aplicar las migraciones de un tag DISTINTO del instalado, sin tocar el
+# entorno.
+#
+# Requiere git y red saliente -- que es exactamente lo que un contenedor no
+# tiene, y el motivo por el que hubo que empaquetarlas. Ver DECISIONS.md,
+# ADR-014.
 #
 # Uso:
 #   LIBRAGENDA_REF=v0.3.0 DATABASE_URL=postgresql://user:pass@host/db \
