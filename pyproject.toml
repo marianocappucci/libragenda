@@ -25,7 +25,17 @@ dev = [
     "pytest>=8.0",
     "fastapi>=0.110",
     "httpx>=0.27",
+    # 🔴 Sin `build`, el test que verifica que las migraciones VIAJEN en el
+    # wheel se saltea — y es el único que contesta la pregunta real. Un skip ahí
+    # se lee igual que un verde. Va en dev para que el CI tampoco lo saltee.
+    "build>=1.0",
 ]
+
+# El comando que aplica las migraciones **desde el paquete instalado**, sin
+# clonar el repo. Es lo que un consumidor corre adentro de su imagen; ver el
+# docstring de `libragenda/migrar.py` para por qué hizo falta.
+[project.scripts]
+libragenda-migrar = "libragenda.migrar:main"
 
 [tool.hatch.version]
 source = "vcs"
@@ -34,7 +44,14 @@ source = "vcs"
 local_scheme = "no-local-version"
 
 [tool.hatch.build.targets.wheel]
+# 🔴 `migrations/` vive **adentro** de `libragenda/` justamente para entrar acá.
+# Mientras estuvo en la raíz del repo quedaba fuera de `packages` y no viajaba
+# en el wheel: un consumidor que instalaba con pip no tenía forma de aplicarlas
+# sin clonar el repo, y por eso ninguna instancia de Gestiolibra ni de MedLibra
+# las tenía puestas. Hay un test que abre el wheel construido y lo verifica.
 packages = ["libragenda"]
+# Los `__pycache__` de las revisiones no tienen por qué viajar.
+exclude = ["**/__pycache__", "**/*.pyc"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
