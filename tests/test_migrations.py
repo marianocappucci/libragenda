@@ -10,9 +10,9 @@ real production engine.
 import os
 
 import pytest
+from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from alembic import command
 from sqlalchemy import create_engine, inspect
 
 DATABASE_URL = os.environ.get("DATABASE_URL")

@@ -1,4 +1,4 @@
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from threading import Barrier, Thread
 
 import pytest
@@ -218,7 +218,7 @@ class FakeClock:
     """Hands out fixed, increasing instants so the log is assertable."""
 
     def __init__(self):
-        self.now = datetime(2026, 7, 20, 9, tzinfo=timezone.utc)
+        self.now = datetime(2026, 7, 20, 9, tzinfo=UTC)
 
     def __call__(self):
         self.now += timedelta(minutes=1)

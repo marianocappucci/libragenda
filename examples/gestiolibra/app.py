@@ -10,11 +10,11 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from libragenda import Appointment, Availability, InMemoryScheduler
+from libragenda.application import AppointmentConflict, AppointmentUnavailable, InvalidTransition
+from libragenda.catalog_repository import SqlAlchemyCatalogRepository
 from libragenda.database import configure, get_engine, get_session_factory
 from libragenda.repositories import InMemoryAppointmentRepository
-from libragenda.catalog_repository import SqlAlchemyCatalogRepository
 from libragenda.sqlalchemy_repository import Base, SqlAlchemyAppointmentRepository
-from libragenda.application import AppointmentConflict, AppointmentUnavailable, InvalidTransition
 
 
 class SeedRequest(BaseModel):
@@ -50,6 +50,7 @@ def create_app(database_url: str) -> FastAPI:
     @app.post("/demo/seed")
     def seed(data: SeedRequest):
         from datetime import timedelta
+
         from libragenda import Branch, Client, Resource, Service
         catalog.add_branch(Branch("demo-branch", "Sucursal demo"))
         catalog.add_client(Client(data.client_id, data.client_name))

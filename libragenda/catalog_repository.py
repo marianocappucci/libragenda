@@ -2,6 +2,7 @@
 
 from collections.abc import Iterable
 from datetime import timedelta
+
 from sqlalchemy.orm import Session, sessionmaker
 
 from .domain import Branch, Client, Holiday, Resource, Service

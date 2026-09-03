@@ -1,6 +1,6 @@
 """Add sent_reminders ledger to track reminders already delivered."""
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "0005_sent_reminders"
 down_revision = "0004_appointment_series"
