@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from .domain import (
     Appointment,
@@ -101,7 +101,7 @@ class InMemoryScheduler:
         self.repository = repository or InMemoryAppointmentRepository()
         self.policies = policies or []
         self.transition_log = transition_log or InMemoryTransitionLog()
-        self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.clock = clock or (lambda: datetime.now(UTC))
 
     def create(
         self,

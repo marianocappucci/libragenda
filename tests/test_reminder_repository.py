@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -66,7 +66,7 @@ def test_reminder_repository_list_sent_filters_by_date_range():
     # No rompe a los consumidores: Gestiolibra y MedLibra usan `list_sent`
     # dentro de un `len()`, para contar recordatorios del periodo.
     in_range = reminders.list_sent(datetime(2026, 7, 19, 0), datetime(2026, 7, 19, 23, 59))
-    assert in_range == [("apt-1", "24h", datetime(2026, 7, 19, 10, tzinfo=timezone.utc))]
+    assert in_range == [("apt-1", "24h", datetime(2026, 7, 19, 10, tzinfo=UTC))]
 
     both = reminders.list_sent(datetime(2026, 7, 1, 0), datetime(2026, 7, 31, 23, 59))
     assert {item[:2] for item in both} == {("apt-1", "24h"), ("apt-2", "2h")}

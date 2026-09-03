@@ -1,15 +1,30 @@
 """SQLAlchemy persistence adapter for appointments."""
 
 from collections.abc import Callable, Iterable
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import (
-    Date, DateTime, ForeignKey, Integer, Numeric, String, Text, Time, TypeDecorator,
-    UniqueConstraint, create_engine, select,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    Time,
+    TypeDecorator,
+    UniqueConstraint,
+    create_engine,
+    select,
 )
 from sqlalchemy.orm import (
-    DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker,
+    DeclarativeBase,
+    Mapped,
+    Session,
+    mapped_column,
+    relationship,
+    sessionmaker,
 )
 
 from .domain import Appointment, AppointmentStatus, AppointmentTransition
@@ -29,7 +44,7 @@ def ensure_utc(value: datetime) -> datetime:
     for such a column must call this so callers get a consistent aware
     datetime regardless of which database is behind the repository.
     """
-    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 class UtcDateTime(TypeDecorator):
@@ -68,8 +83,8 @@ class UtcDateTime(TypeDecorator):
         if value is None:
             return None
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
     def process_result_value(self, value: datetime | None, dialect) -> datetime | None:
         if value is None:

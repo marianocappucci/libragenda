@@ -1,6 +1,6 @@
 """Add nullable medio_pago column to deposits."""
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "0008_deposit_medio_pago"
 down_revision = "0007_appointment_reason"

@@ -1,6 +1,6 @@
 """Add appointments.series_id to group recurring occurrences."""
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "0004_appointment_series"
 down_revision = "0003_timezone_holidays"

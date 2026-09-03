@@ -17,7 +17,7 @@ trajo filas -- sobre tablas vacias, dos listas vacias comparan iguales.
 Se saltea sin `LIBRAGENDA_PG_URL`. En CI la pone el workflow.
 """
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import create_engine
@@ -25,7 +25,11 @@ from sqlalchemy.orm import sessionmaker
 
 from libragenda.domain import Appointment, AppointmentStatus
 from libragenda.sqlalchemy_repository import (
-    Base, BranchRow, ClientRow, ResourceRow, ServiceRow,
+    Base,
+    BranchRow,
+    ClientRow,
+    ResourceRow,
+    ServiceRow,
     SqlAlchemyAppointmentRepository,
 )
 
@@ -108,7 +112,7 @@ def test_un_turno_con_offset_local_guarda_EL_MISMO_INSTANTE_en_los_dos(dos_motor
     for i, cuando in enumerate(CUANDO):
         a_pg, a_lite = pg.get(f"a{i}"), lite.get(f"a{i}")
         assert a_pg is not None and a_lite is not None, f"falta a{i}"
-        esperado = cuando.astimezone(timezone.utc)
+        esperado = cuando.astimezone(UTC)
         assert a_pg.starts_at == esperado, f"PostgreSQL movio a{i}"
         assert a_lite.starts_at == esperado, f"SQLite movio a{i}"
         assert a_pg.starts_at == a_lite.starts_at
@@ -150,7 +154,7 @@ def test_reserve_corre_el_camino_de_POSTGRES_y_no_solo_el_de_sqlite(dos_motores)
 
     for repo in (pg, lite):
         guardado = repo.reserve(_turno(99, nuevo), validator=lambda existentes: _turno(99, nuevo))
-        assert guardado.starts_at == nuevo.astimezone(timezone.utc)
+        assert guardado.starts_at == nuevo.astimezone(UTC)
 
     assert pg.get("a99") is not None
     assert pg.get("a99").starts_at == lite.get("a99").starts_at
@@ -172,6 +176,6 @@ def test_un_datetime_naive_se_toma_como_utc_en_los_dos(dos_motores):
     for repo in (pg, lite):
         repo.add(_turno(77, naive))
 
-    esperado = naive.replace(tzinfo=timezone.utc)
+    esperado = naive.replace(tzinfo=UTC)
     assert pg.get("a77").starts_at == esperado
     assert lite.get("a77").starts_at == esperado

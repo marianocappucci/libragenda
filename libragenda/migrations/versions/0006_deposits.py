@@ -1,6 +1,6 @@
 """Add deposits table (one deposit per appointment)."""
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "0006_deposits"
 down_revision = "0005_sent_reminders"
