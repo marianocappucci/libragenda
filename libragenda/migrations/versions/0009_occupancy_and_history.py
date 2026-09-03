@@ -5,8 +5,8 @@ since an appointment with no secondary resource competes only for its own
 one, an availability window with no validity applies always, and a resource
 with no policy books back-to-back and refuses overbooking.
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 # El id no puede pasar de 32 caracteres: `alembic_version.version_num` es un
 # varchar(32). SQLite no valida el largo y deja pasar cualquiera, asi que esto

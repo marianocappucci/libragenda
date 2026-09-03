@@ -3,6 +3,7 @@ import os
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+
 from libragenda.sqlalchemy_repository import Base
 
 target_metadata = Base.metadata

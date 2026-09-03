@@ -1,4 +1,4 @@
-from datetime import date, time, timedelta
+from datetime import UTC, date, time, timedelta
 
 import pytest
 from sqlalchemy import create_engine
@@ -48,8 +48,8 @@ def test_block_crud_round_trip(repo: SqlAlchemyAvailabilityRepository):
     # so the domain object under comparison must start out aware too.
     block = TimeBlock(
         "resource-1",
-        starts_at=datetime(2026, 7, 20, 9, 0, tzinfo=timezone.utc),
-        ends_at=datetime(2026, 7, 20, 10, 0, tzinfo=timezone.utc),
+        starts_at=datetime(2026, 7, 20, 9, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 7, 20, 10, 0, tzinfo=UTC),
         reason="maintenance",
     )
     block_id = repo.add_block(block)
@@ -58,8 +58,8 @@ def test_block_crud_round_trip(repo: SqlAlchemyAvailabilityRepository):
 
     updated = TimeBlock(
         "resource-1",
-        starts_at=datetime(2026, 7, 20, 11, 0, tzinfo=timezone.utc),
-        ends_at=datetime(2026, 7, 20, 12, 0, tzinfo=timezone.utc),
+        starts_at=datetime(2026, 7, 20, 11, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 7, 20, 12, 0, tzinfo=UTC),
         reason="vacation",
     )
     repo.update_block(block_id, updated)

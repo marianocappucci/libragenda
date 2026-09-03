@@ -1,4 +1,4 @@
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 
 import pytest
 
@@ -163,24 +163,24 @@ def test_appointment_rejects_invalid_secondary_resources(secondary):
 def test_first_time_at_returns_the_earliest_occurrence():
     transitions = [
         AppointmentTransition("apt-1", AppointmentStatus.IN_PROGRESS,
-                              datetime(2026, 7, 20, 10, 18, tzinfo=timezone.utc)),
+                              datetime(2026, 7, 20, 10, 18, tzinfo=UTC)),
         AppointmentTransition("apt-1", AppointmentStatus.PENDING,
-                              datetime(2026, 7, 1, 9, tzinfo=timezone.utc)),
+                              datetime(2026, 7, 1, 9, tzinfo=UTC)),
         AppointmentTransition("apt-1", AppointmentStatus.COMPLETED,
-                              datetime(2026, 7, 20, 10, 41, tzinfo=timezone.utc)),
+                              datetime(2026, 7, 20, 10, 41, tzinfo=UTC)),
     ]
 
     started = first_time_at(transitions, AppointmentStatus.IN_PROGRESS)
     finished = first_time_at(transitions, AppointmentStatus.COMPLETED)
 
-    assert started == datetime(2026, 7, 20, 10, 18, tzinfo=timezone.utc)
+    assert started == datetime(2026, 7, 20, 10, 18, tzinfo=UTC)
     # 23 minutes of real attention, read from the log and not from a column.
     assert finished - started == timedelta(minutes=23)
 
 
 def test_first_time_at_is_none_for_a_status_never_reached():
     transitions = [AppointmentTransition("apt-1", AppointmentStatus.PENDING,
-                                         datetime(2026, 7, 1, 9, tzinfo=timezone.utc))]
+                                         datetime(2026, 7, 1, 9, tzinfo=UTC))]
 
     assert first_time_at(transitions, AppointmentStatus.COMPLETED) is None
 

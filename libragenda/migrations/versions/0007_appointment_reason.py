@@ -1,6 +1,6 @@
 """Add nullable reason column to appointments (cancel/reschedule note)."""
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "0007_appointment_reason"
 down_revision = "0006_deposits"
