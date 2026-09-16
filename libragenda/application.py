@@ -195,6 +195,14 @@ class InMemoryScheduler:
         allow_overbooking: bool = False,
         actor: str | None = None,
     ) -> Appointment:
+        """Move a booking to another slot, validating and writing atomically.
+
+        `relocate` and not `save`: moving is read-validate-write over a slot
+        that everyone else is competing for, exactly like booking. Validating
+        here and saving afterwards let two concurrent moves onto the same free
+        slot each check against a state that did not yet hold the other, and
+        both land -- the very race `reserve` closes for `create`.
+        """
         current = self.get(appointment_id)
         if current.status not in {AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED}:
             raise InvalidTransition(f"cannot reschedule {current.status.value} appointment")
@@ -203,11 +211,18 @@ class InMemoryScheduler:
             starts_at=starts_at,
             reason=reason if reason is not None else current.reason,
         )
-        overbooked = self._validate_slot(
-            candidate, exclude_id=current.id, allow_overbooking=allow_overbooking
+        moved = self.repository.relocate(
+            candidate,
+            lambda existing: replace(
+                candidate,
+                overbooked=self._validate_slot(
+                    candidate,
+                    exclude_id=current.id,
+                    allow_overbooking=allow_overbooking,
+                    existing=existing,
+                ),
+            ),
         )
-        moved = replace(candidate, overbooked=overbooked)
-        self.repository.save(moved)
         self._record(moved, from_status=current.status, actor=actor, reason=reason)
         return moved
 

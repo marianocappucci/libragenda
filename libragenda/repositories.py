@@ -23,6 +23,10 @@ class AppointmentRepository(Protocol):
         self, appointment: Appointment, validator: Callable[[Iterable[Appointment]], Appointment]
     ) -> Appointment: ...
 
+    def relocate(
+        self, appointment: Appointment, validator: Callable[[Iterable[Appointment]], Appointment]
+    ) -> Appointment: ...
+
 
 class InMemoryAppointmentRepository:
     """Reference adapter for tests and local development."""
@@ -56,6 +60,16 @@ class InMemoryAppointmentRepository:
         with self._lock:
             if appointment.id in self._items:
                 raise ValueError(f"appointment already exists: {appointment.id}")
+            result = validator(tuple(self._items.values()))
+            self._items[result.id] = result
+            return result
+
+    def relocate(
+        self, appointment: Appointment, validator: Callable[[Iterable[Appointment]], Appointment]
+    ) -> Appointment:
+        with self._lock:
+            if appointment.id not in self._items:
+                raise KeyError(appointment.id)
             result = validator(tuple(self._items.values()))
             self._items[result.id] = result
             return result
