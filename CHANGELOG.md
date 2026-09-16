@@ -1,6 +1,6 @@
 # Changelog — LibraGenda
 
-## [Unreleased]
+## v0.11.0 — 2026-09-16
 
 - 🔴 **Reagendar toma el mismo lock que reservar** (`relocate`). `reschedule()`
   validaba el choque y después escribía con `save()`, **fuera** de la
@@ -25,6 +25,14 @@
   simultáneas contra PostgreSQL real, **con su contraprueba**: el test hermano
   reproduce el doble booking por el camino sin lock, así que el verde del
   primero no puede deberse a que los hilos nunca se cruzaron.
+
+## v0.10.0 — 2026-08-24
+
+> 📌 **Esta entrada estaba bajo `[Unreleased]` por error.** Medido el
+> 2026-09-16: su commit (`e938dac`) es **ancestro del tag `v0.10.0`**, o sea que
+> viajó en esa versión y llevaba tres semanas figurando como sin publicar. Es el
+> tipo de dato que hace que un consumidor no suba el pin creyendo que la mejora
+> todavía no existe.
 
 - **Las migraciones viajan en el paquete** (ADR-014). `migrations/` pasó a
   `libragenda/migrations/` y se aplican con el comando que instala el propio
