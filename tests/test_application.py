@@ -418,6 +418,11 @@ class SnapshotBarrierRepository:
             self._barrier.wait(timeout=5)
         return self._repository.reserve(appointment, validator)
 
+    def relocate(self, appointment, validator):
+        if appointment.id.startswith("mov-"):
+            self._barrier.wait(timeout=5)
+        return self._repository.relocate(appointment, validator)
+
 
 def test_concurrent_same_slot_is_serialized_by_repository():
     repository = SnapshotBarrierRepository()
@@ -445,6 +450,46 @@ def test_concurrent_same_slot_is_serialized_by_repository():
     assert len(results) == 1
     assert len(errors) == 1
     assert isinstance(errors[0], AppointmentConflict)
+
+
+def test_concurrent_reschedules_to_same_slot_are_serialized():
+    """The mirror of the test above: moving competes for a slot like booking.
+
+    `reschedule` used to validate the slot and then call `save`, so two moves
+    onto the same free hour each checked against a snapshot without the other
+    and both landed. It goes through `relocate` for the same reason `create`
+    goes through `reserve`.
+    """
+    repository = SnapshotBarrierRepository()
+    schedulers = [
+        InMemoryScheduler(
+            [Availability("resource-1", 0, time(9), time(18))], repository=repository
+        )
+        for _ in range(2)
+    ]
+    # Seeded outside the race, in slots of their own; both then want 15h.
+    for index, scheduler in enumerate(schedulers):
+        scheduler.create(make_appointment(f"mov-{index}", hour=10 + index))
+    results, errors = [], []
+
+    def mover(scheduler, identifier):
+        try:
+            results.append(scheduler.reschedule(identifier, datetime(2026, 7, 20, 15)))
+        except Exception as exc:  # pragma: no cover - assertion below names it
+            errors.append(exc)
+
+    threads = [Thread(target=mover, args=(scheduler, f"mov-{index}"))
+               for index, scheduler in enumerate(schedulers)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert len(results) == 1, [item.id for item in results]
+    assert len(errors) == 1
+    assert isinstance(errors[0], AppointmentConflict)
+    # Contraprueba: el que gano quedo movido de verdad, no rechazado en silencio.
+    assert repository.get(results[0].id).starts_at == datetime(2026, 7, 20, 15)
 
 
 def test_concurrent_overbookings_respect_the_daily_cap():

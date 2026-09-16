@@ -339,6 +339,46 @@ class SqlAlchemyAppointmentRepository:
             session.add(self._to_row(stored))
             return stored
 
+    def relocate(
+        self,
+        appointment: Appointment,
+        validator: Callable[[Iterable[Appointment]], Appointment],
+    ) -> Appointment:
+        """Validate and update an already stored appointment in one transaction.
+
+        The mirror of `reserve`, and it takes the same lock for the same
+        reason: moving a booking is also read-validate-write over a shared
+        slot. Validating outside the transaction and then calling `save`
+        lets two concurrent moves onto the same free slot both pass their
+        check against a state that does not yet hold the other one.
+
+        Locking the same resource rows as `reserve` is what also serializes a
+        move against a booking: the two paths compete for one slot, so they
+        have to queue on the same row and not on two separate ones.
+
+        The appointment has to exist -- this is not a disguised insert, and a
+        missing row raises instead of quietly creating one.
+        """
+        with self.session_factory.begin() as session:
+            if session.bind.dialect.name == "sqlite":
+                session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+            occupied_ids = appointment.occupied_resource_ids
+            if occupied_ids:
+                session.scalars(
+                    select(ResourceRow)
+                    .where(ResourceRow.id.in_(occupied_ids))
+                    .with_for_update()
+                    
+                ).all()
+            row = session.get(AppointmentRow, appointment.id)
+            if row is None:
+                raise KeyError(appointment.id)
+            existing_rows = session.scalars(select(AppointmentRow)).all()
+            existing = tuple(self._to_domain(item) for item in existing_rows)
+            stored = validator(existing)
+            self._copy_to_row(row, stored)
+            return stored
+
     def get(self, appointment_id: str) -> Appointment | None:
         with self.session_factory() as session:
             row = session.get(AppointmentRow, appointment_id)

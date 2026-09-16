@@ -1,6 +1,38 @@
 # Changelog — LibraGenda
 
-## [Unreleased]
+## v0.11.0 — 2026-09-16
+
+- 🔴 **Reagendar toma el mismo lock que reservar** (`relocate`). `reschedule()`
+  validaba el choque y después escribía con `save()`, **fuera** de la
+  transacción: dos reagendados hacia el mismo hueco libre validaban los dos
+  contra un estado sin el otro, y entraban los dos. Es la carrera que
+  `reserve()` cerró el 2026-08-05 para el alta, viva en el camino espejo — y
+  alcanzable por HTTP, porque Gestiolibra y MedLibra exponen
+  `POST /appointments/{id}/reschedule`.
+
+  El puerto `AppointmentRepository` gana `relocate(appointment, validator)`:
+  mismo contrato que `reserve` pero para un turno que ya existe — toma
+  `SELECT … FOR UPDATE` sobre los recursos ocupados, valida y **actualiza**
+  dentro de una sola transacción. Bloquea **las mismas filas** que `reserve`,
+  que es lo que además serializa un movimiento contra un alta: los dos compiten
+  por un hueco, así que tienen que hacer cola en la misma fila.
+
+  ⚠️ **Cambia el puerto**: un consumidor que implemente `AppointmentRepository`
+  a mano —Gestiolibra y MedLibra lo hacen, con su envoltorio de hora local—
+  tiene que agregar `relocate` antes de subir a esta versión.
+
+  Cubierto por `tests/test_concurrencia_del_hueco.py`, que corre dos escrituras
+  simultáneas contra PostgreSQL real, **con su contraprueba**: el test hermano
+  reproduce el doble booking por el camino sin lock, así que el verde del
+  primero no puede deberse a que los hilos nunca se cruzaron.
+
+## v0.10.0 — 2026-08-24
+
+> 📌 **Esta entrada estaba bajo `[Unreleased]` por error.** Medido el
+> 2026-09-16: su commit (`e938dac`) es **ancestro del tag `v0.10.0`**, o sea que
+> viajó en esa versión y llevaba tres semanas figurando como sin publicar. Es el
+> tipo de dato que hace que un consumidor no suba el pin creyendo que la mejora
+> todavía no existe.
 
 - **Las migraciones viajan en el paquete** (ADR-014). `migrations/` pasó a
   `libragenda/migrations/` y se aplican con el comando que instala el propio
