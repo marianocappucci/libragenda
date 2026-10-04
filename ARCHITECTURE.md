@@ -40,3 +40,12 @@ El producto vertical configura `DATABASE_URL`, construye la factoría de sesione
 - Producción: dominio del cliente del consumidor.
 
 La rama observada actualmente en este repositorio es `main`; la adopción de `develop` como rama de integración queda pendiente de una decisión operativa explícita.
+
+## Dónde se arregla (regla de la familia, 2026-10-03)
+
+**Este repo es un motor: el arreglo de fondo de lo que le toca vive siempre acá**, nunca en cada
+producto que lo consume. Lo que otro producto comparte o podría compartir se escribe y se arregla
+acá y llega a los productos subiendo el pin; el producto aporta sólo costuras (hooks) y lo suyo
+(pantallas, textos, modelo de datos propio). Si falta una costura, se agrega acá. Si un producto
+necesita el arreglo antes, se hace acá igual (PR y tag): no se deja «provisorio» en el producto.
+Detalle y motivo: `reglas/producto.md` del wiki.
