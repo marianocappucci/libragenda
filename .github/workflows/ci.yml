@@ -28,25 +28,22 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: public.ecr.aws/docker/library/postgres:16-alpine
-        env:
-          POSTGRES_DB: libragenda
-          POSTGRES_USER: libragenda_ci
-          POSTGRES_PASSWORD: libragenda_ci_only
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U libragenda_ci -d libragenda"
-          --health-interval 3s
-          --health-timeout 3s
-          --health-retries 10
-
     env:
       DATABASE_URL: postgresql+psycopg://libragenda_ci:libragenda_ci_only@localhost:5432/libragenda
 
     steps:
+      # El PostgreSQL sale de la Action compartida de libra-web-kit (`postgres-ci-v1`, desde el espejo de ECR;
+      # reglas/ci.md del wiki), con los mismos datos y el mismo healthcheck que el `services:` de antes.
+      - name: PostgreSQL de la suite
+        uses: marianocappucci/libra-web-kit/.github/actions/postgres-ci@postgres-ci-v1
+        with:
+          variante: alpine
+          base: libragenda
+          usuario: libragenda_ci
+          clave: libragenda_ci_only
+          intervalo: "3s"
+          timeout: "3s"
+          reintentos: "10"
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
