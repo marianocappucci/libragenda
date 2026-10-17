@@ -56,6 +56,7 @@ from .deposit_manager import (
     InvalidDepositTransition,
 )
 from .deposit_repository import SqlAlchemyDepositRepository
+from .esquema import crear_esquema
 from .notifications import (
     NotificationPort,
     ReminderNotification,

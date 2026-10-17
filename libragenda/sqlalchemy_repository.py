@@ -28,6 +28,7 @@ from sqlalchemy.orm import (
 )
 
 from .domain import Appointment, AppointmentStatus, AppointmentTransition
+from .esquema import crear_esquema
 
 
 class Base(DeclarativeBase):
@@ -303,7 +304,7 @@ class SqlAlchemyAppointmentRepository:
     @classmethod
     def from_url(cls, url: str) -> "SqlAlchemyAppointmentRepository":
         engine = create_engine(url)
-        Base.metadata.create_all(engine)
+        crear_esquema(engine, Base.metadata)
         return cls(sessionmaker(engine, expire_on_commit=False))
 
     def add(self, appointment: Appointment) -> None:
@@ -447,7 +448,7 @@ class SqlAlchemyTransitionLog:
     @classmethod
     def from_url(cls, url: str) -> "SqlAlchemyTransitionLog":
         engine = create_engine(url)
-        Base.metadata.create_all(engine)
+        crear_esquema(engine, Base.metadata)
         return cls(sessionmaker(engine, expire_on_commit=False))
 
     def record(self, transition: AppointmentTransition) -> None:

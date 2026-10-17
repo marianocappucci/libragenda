@@ -1,5 +1,23 @@
 # Changelog — LibraGenda
 
+## v0.12.0 — 2026-10-16
+
+- 🔴 **El esquema se crea de a un proceso por vez** (`libragenda.crear_esquema`, ADR-015). MedLibra y Gestiolibra crean sus
+  tablas en el arranque con `Base.metadata.create_all(get_engine())`; con `uvicorn --workers 2` el arranque corre dos
+  veces juntas, `create_all` mira qué falta y después crea (no es atómico en PostgreSQL), y sobre una base sin las tablas
+  el segundo `CREATE TABLE` choca en el catálogo (`relation … already exists`). En SQLite, lo mismo con dos procesos sobre
+  el mismo archivo. `crear_esquema(engine, metadata=None)` corre el mismo `create_all` en una transacción que empieza
+  tomando un candado bloqueante (PostgreSQL: `pg_try_advisory_xact_lock`; SQLite: `BEGIN IMMEDIATE`): el segundo proceso
+  espera al primero y encuentra las tablas. `TimeoutError` a los 120 s. **Sin dependencia nueva**: no usa libracore.
+
+  `SqlAlchemyAppointmentRepository.from_url` y `SqlAlchemyTransitionLog.from_url` ya lo usan.
+
+  ⚠️ **No cambia nada hasta que el consumidor lo llame**: reemplazar `Base.metadata.create_all(get_engine())` por
+  `crear_esquema(get_engine())` en el `create_app()` de MedLibra y de Gestiolibra. Sin migración ni cambio de puerto.
+
+  Cubierto por `tests/test_esquema_concurrente.py` (dos creaciones simultáneas en PostgreSQL y SQLite, con contraprueba:
+  el mismo arnés con `create_all` pelado choca).
+
 ## v0.11.0 — 2026-09-16
 
 - 🔴 **Reagendar toma el mismo lock que reservar** (`relocate`). `reschedule()`
