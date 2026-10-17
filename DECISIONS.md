@@ -372,3 +372,38 @@ Registro ADR. Las decisiones no se borran; si dejan de aplicar, se marcan como r
   de dev —sin él, el test que verifica que las migraciones viajan en el wheel
   se **saltea**, y un skip se lee igual que un verde— y 13 tests nuevos,
   incluido uno que abre el `.whl` construido y mira adentro.
+
+## ADR-015 — El esquema se crea de a un proceso por vez (`crear_esquema`)
+
+- Estado: aceptada.
+- Fecha: 2026-10-16
+- Contexto: con `uvicorn --workers N` (ADR-044 de libracore; hoy N = 1 en toda la familia) cada worker corre el arranque del
+  producto. MedLibra (`app/main.py`, `create_app`) y Gestiolibra crean sus tablas ahí con
+  `Base.metadata.create_all(get_engine())`, sobre el `Base` de este paquete, al que suman las suyas. `create_all` **mira** qué
+  tablas faltan y después las **crea**; en PostgreSQL esas dos cosas no son atómicas, así que dos procesos que arrancan
+  juntos sobre una base sin las tablas contestan los dos «faltan» y el segundo `CREATE TABLE` choca en el catálogo
+  (`relation … already exists` / `duplicate key … pg_type_typname_nsp_index`). Es el mismo defecto que ADR-053 de libracore
+  (`init_core_schema`) y ADR-062 de libracommerce (`init_schema`) cerraron en sus motores. En una instancia migrada con
+  `libragenda-migrar` las tablas ya están y `create_all` no hace nada: el choque sólo aparece con una tabla que la cadena
+  no trae (o un alta de cliente que no migró primero), que es cuando nadie lo mira. Pasaba también en SQLite: dos
+  procesos sobre el mismo archivo.
+- Decisión: **`libragenda.crear_esquema(engine, metadata=None)`**, que corre `metadata.create_all` en **una transacción** que
+  empieza tomando un candado **bloqueante**: el segundo proceso espera al primero y, cuando entra, ya encuentra las tablas.
+  - PostgreSQL: `pg_try_advisory_xact_lock` reintentado cada 0,1 s en la conexión del DDL (dura hasta su `commit`; el DDL
+    de PostgreSQL es transaccional, así que un arranque que falla no deja tablas a medias).
+  - SQLite (archivo): `BEGIN IMMEDIATE`, el candado de escritura de la base, con el mismo reintento. En memoria no hace nada.
+  - Pasados `espera` segundos (120) levanta `TimeoutError`: un arranque que se queda esperando en silencio es peor que
+    uno que falla diciendo por qué.
+  - La clave del candado asesor se deriva del nombre con SHA-256 (56 bits), igual que en los otros motores.
+- **Por qué acá y no con `libracore.candados`:** LibraGenda no depende de libracore (`dependencies` = SQLAlchemy, alembic,
+  psycopg) y no debe pasar a depender sólo por esto. El mecanismo es el mismo; la API está copiada en espíritu, no
+  importada. Si algún día la familia lo sube a un paquete común, esto se reemplaza por esa llamada.
+- Consecuencias:
+  - `SqlAlchemyAppointmentRepository.from_url` y `SqlAlchemyTransitionLog.from_url` usan `crear_esquema`.
+  - 🔴 **El cambio que falta lo hace el consumidor:** MedLibra y Gestiolibra tienen que reemplazar
+    `Base.metadata.create_all(get_engine())` por `crear_esquema(get_engine())` al subir el pin a v0.12.0. Subir el pin sin
+    tocar esa línea no cambia nada.
+  - Es un candado **por base**: no protege los `create_all` de otros `MetaData` (el `AuditoriaBase` de MedLibra y Gestiolibra
+    ya va dentro de `una_vez_al_arrancar`); quien los tenga puede pasar su `metadata` a `crear_esquema`.
+  - Cubierto por `tests/test_esquema_concurrente.py`: dos creaciones simultáneas contra PostgreSQL y SQLite, con la ventana
+    de la carrera ensanchada y **con su contraprueba** (el mismo arnés con `create_all` pelado SÍ choca).
