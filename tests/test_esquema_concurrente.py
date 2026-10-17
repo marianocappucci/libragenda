@@ -160,3 +160,61 @@ def test_from_url_crea_el_esquema_con_el_candado(repositorio, tmp_path, monkeypa
     repositorio.from_url(f"sqlite:///{tmp_path / 'agenda.db'}")
 
     assert visto == [1]
+
+
+# ── Sin PostgreSQL a mano: las ramas que el CI de SQLite no ve de otro modo ─────────────────────────────────────────────
+
+def test_la_clave_del_candado_es_estable_y_entra_en_un_bigint():
+    clave = modulo._clave(modulo.CANDADO_DEL_ESQUEMA)
+    assert clave == modulo._clave(modulo.CANDADO_DEL_ESQUEMA)
+    assert 0 < clave < 2 ** 56
+    assert clave != modulo._clave("otro")
+
+
+def test_sqlite_si_otro_tiene_la_base_y_no_suelta_el_arranque_lo_dice(tmp_path):
+    """Otro proceso con `BEGIN IMMEDIATE` tomado: el arranque reintenta y, vencida la espera, `TimeoutError` con el motivo."""
+    import sqlite3
+
+    ruta = tmp_path / "agenda.db"
+    otro = sqlite3.connect(ruta, timeout=0, isolation_level=None)
+    otro.execute("BEGIN IMMEDIATE")
+    try:
+        motor = create_engine(f"sqlite:///{ruta}", connect_args={"timeout": 0})
+        with pytest.raises(TimeoutError, match="SQLite"):
+            crear_esquema(motor, _metadata(), espera=0.3)
+    finally:
+        otro.execute("ROLLBACK")
+        otro.close()
+
+
+class _Dialecto:
+    def __init__(self, nombre):
+        self.name = nombre
+
+
+class _ConexionFalsa:
+    """Lo mínimo de una `Connection` para recorrer la rama de PostgreSQL sin un servidor."""
+
+    def __init__(self, nombre, respuestas=()):
+        self.dialect = _Dialecto(nombre)
+        self._respuestas = list(respuestas)
+        self.pedidos = []
+
+    def execute(self, sentencia, params=None):
+        self.pedidos.append((str(sentencia), params))
+        valor = self._respuestas.pop(0)
+        return type("R", (), {"scalar": lambda _self: valor})()
+
+
+def test_postgres_reintenta_hasta_tomar_el_candado(monkeypatch):
+    monkeypatch.setattr(modulo, "_PASO", 0)
+    conexion = _ConexionFalsa("postgresql", [False, False, True])
+
+    assert modulo.serializar_esquema(conexion) is True
+    assert len(conexion.pedidos) == 3
+    assert all("pg_try_advisory_xact_lock" in s for s, _ in conexion.pedidos)
+    assert conexion.pedidos[0][1] == {"clave": modulo._clave(modulo.CANDADO_DEL_ESQUEMA)}
+
+
+def test_un_motor_desconocido_no_toma_candado():
+    assert modulo.serializar_esquema(_ConexionFalsa("mysql")) is False
