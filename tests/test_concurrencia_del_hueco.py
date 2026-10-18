@@ -37,6 +37,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from libragenda.domain import Appointment, AppointmentStatus
+from libragenda.scheduling import find_conflicts
 from libragenda.sqlalchemy_repository import (
     AppointmentRow,
     Base,
@@ -201,3 +202,136 @@ def test_relocate_exige_que_el_turno_exista(repo):
     with pytest.raises(KeyError):
         repo.relocate(_turno(99, DESTINO), _validador("a99"))
     assert _en_destino(repo.session_factory) == []
+
+
+# -- el recurso secundario, con dos profesionales distintos (ADR-016) ---------
+#
+# Hasta aca los dos turnos que se disputaban el hueco eran del MISMO recurso.
+# El caso que importa para un consultorio es el otro: dos profesionales
+# distintos, cada uno con su propia fila, que se cruzan solo en la sala. Si
+# `reserve`/`relocate` trabaran solo el recurso primario, cada hilo tomaria su
+# fila, no veria al otro y entrarian los dos.
+
+
+def _en_sala(n: int, profesional: str, cuando: datetime = DESTINO) -> Appointment:
+    return Appointment(
+        id=f"a{n}", resource_id=profesional, service_id="s1", client_id="c1",
+        starts_at=cuando, duration=timedelta(minutes=30),
+        status=AppointmentStatus.CONFIRMED, branch_id="b1",
+        secondary_resource_ids=("sala-1",),
+    )
+
+
+def _validador_de_sala(mi_turno: Appointment, aviso: threading.Event | None = None,
+                       retener: float = 0.0):
+    """El validador del motor: choca por cualquier recurso ocupado en comun."""
+    def validar(existentes):
+        choques = find_conflicts(mi_turno, list(existentes))
+        if aviso is not None:
+            aviso.set()
+        if retener:
+            time.sleep(retener)
+        if choques:
+            raise Choque(f"{[c.id for c in choques]} ya ocupan {choques[0].occupied_resource_ids}")
+        return mi_turno
+    return validar
+
+
+@pytest.fixture
+def repo_con_sala():
+    engine = create_engine(PG_URL)
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(engine, expire_on_commit=False)
+    with Session.begin() as s:
+        s.add(BranchRow(id="b1", name="Sucursal"))
+        s.add(ClientRow(id="c1", name="Cliente"))
+        for rid in ("dr-1", "dr-2", "sala-1", "sala-2"):
+            s.add(ResourceRow(id=rid, name=rid))
+        s.add(ServiceRow(id="s1", name="Servicio", duration_seconds=1800))
+    return SqlAlchemyAppointmentRepository(Session)
+
+
+def test_dos_profesionales_a_la_misma_sala_no_entran_los_dos(repo_con_sala):
+    """🔴 El defecto de MedLibra, visto desde el motor: la sala es de los dos."""
+    repo = repo_con_sala
+
+    def primero(leyo):
+        turno = _en_sala(1, "dr-1")
+        repo.reserve(turno, _validador_de_sala(turno, aviso=leyo, retener=RETENER))
+
+    def segundo():
+        turno = _en_sala(2, "dr-2")
+        repo.reserve(turno, _validador_de_sala(turno))
+
+    errores = _correr_los_dos(primero, segundo)
+
+    assert [k for k, v in errores.items() if v is not None] == ["segundo"], errores
+    assert isinstance(errores["segundo"], Choque), errores["segundo"]
+    assert _en_destino(repo.session_factory) == ["a1"]
+
+
+def test_dos_profesionales_a_salas_distintas_entran_los_dos(repo_con_sala):
+    """El control: el candado es de la sala, no de todo el que reserva a la vez."""
+    repo = repo_con_sala
+
+    def en(n, profesional, sala):
+        turno = Appointment(
+            id=f"a{n}", resource_id=profesional, service_id="s1", client_id="c1",
+            starts_at=DESTINO, duration=timedelta(minutes=30),
+            status=AppointmentStatus.CONFIRMED, branch_id="b1", secondary_resource_ids=(sala,),
+        )
+        return turno
+
+    def primero(leyo):
+        turno = en(1, "dr-1", "sala-1")
+        repo.reserve(turno, _validador_de_sala(turno, aviso=leyo, retener=RETENER))
+
+    def segundo():
+        turno = en(2, "dr-2", "sala-2")
+        repo.reserve(turno, _validador_de_sala(turno))
+
+    errores = _correr_los_dos(primero, segundo)
+
+    assert errores == {"primero": None, "segundo": None}, errores
+    assert _en_destino(repo.session_factory) == ["a1", "a2"]
+
+
+def test_dos_reagendados_de_distintos_profesionales_a_la_misma_sala_no_entran_los_dos(repo_con_sala):
+    """🔴 El camino espejo: `relocate` tambien traba la sala nueva."""
+    repo = repo_con_sala
+    repo.add(_en_sala(1, "dr-1", datetime(2026, 8, 12, 8, 0, tzinfo=UTC)))
+    repo.add(_en_sala(2, "dr-2", datetime(2026, 8, 12, 9, 0, tzinfo=UTC)))
+
+    def primero(leyo):
+        turno = _en_sala(1, "dr-1")
+        repo.relocate(turno, _validador_de_sala(turno, aviso=leyo, retener=RETENER))
+
+    def segundo():
+        turno = _en_sala(2, "dr-2")
+        repo.relocate(turno, _validador_de_sala(turno))
+
+    errores = _correr_los_dos(primero, segundo)
+
+    assert [k for k, v in errores.items() if v is not None] == ["segundo"], errores
+    assert _en_destino(repo.session_factory) == ["a1"]
+
+
+def test_la_sala_sin_lock_SI_duplica(repo_con_sala):
+    """La contraprueba de los tres de arriba: sin candado, entran los dos."""
+    repo = repo_con_sala
+
+    def sin_lock(n, profesional, aviso=None):
+        turno = _en_sala(n, profesional)
+        validar = _validador_de_sala(turno, aviso=aviso, retener=RETENER if aviso else 0.0)
+        repo.add(validar(repo.list()))      # leer y validar afuera, escribir despues
+
+    errores = _correr_los_dos(
+        lambda leyo: sin_lock(1, "dr-1", aviso=leyo),
+        lambda: sin_lock(2, "dr-2"),
+    )
+
+    assert errores == {"primero": None, "segundo": None}, errores
+    assert _en_destino(repo.session_factory) == ["a1", "a2"], (
+        "el arnes no reprodujo el doble booking de la sala: los tests hermanos no prueban nada"
+    )

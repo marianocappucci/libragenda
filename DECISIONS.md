@@ -407,3 +407,42 @@ Registro ADR. Las decisiones no se borran; si dejan de aplicar, se marcan como r
     ya va dentro de `una_vez_al_arrancar`); quien los tenga puede pasar su `metadata` a `crear_esquema`.
   - Cubierto por `tests/test_esquema_concurrente.py`: dos creaciones simultáneas contra PostgreSQL y SQLite, con la ventana
     de la carrera ensanchada y **con su contraprueba** (el mismo arnés con `create_all` pelado SÍ choca).
+
+## ADR-016 — El recurso secundario se traba y se valida con el primario, y el choque dice cuál fue
+
+- Estado: aceptada.
+- Fecha: 2026-10-17
+- Contexto: MedLibra dejaba que dos profesionales se quedaran el mismo consultorio a la misma hora. Su ADR-030 modelaba la
+  sala como una entidad del vertical y la chequeaba en `AppointmentService` **antes** de llamar a `reserve()`: leía los
+  turnos, veía la sala libre y recién después el motor abría su transacción. Entre las dos cosas cabía el pedido del otro
+  profesional —cada uno traba su propia fila de recurso, así que no se cruzaban—, y entraban los dos. El motivo declarado
+  era que «el motor asocia un turno a un solo recurso»; ADR-009 ya había dejado de ser cierto eso. Se midió primero si el
+  defecto era del motor: dos reservas simultáneas de profesionales distintos con la misma sala como secundario, contra
+  PostgreSQL real (`tests/test_concurrencia_del_hueco.py`), **dan un solo turno en v0.12.0**, con su contraprueba (leer y
+  validar afuera, escribir después, deja entrar los dos). `reserve()` ya tomaba `FOR UPDATE` sobre `occupied_resource_ids`
+  —primario y secundarios— y `find_conflicts()` compara la intersección.
+- Decisión: **no se agrega un mecanismo nuevo; se completa el que ADR-009 dejó.** La sala sigue siendo un `Resource` genérico
+  y un recurso secundario del turno (el motor no aprende la palabra «consultorio»), y un turno con la sala ocupada falla
+  igual que uno con el horario ocupado: `AppointmentConflict`. Tres cosas hacían falta para que un consumidor la use bien:
+  - **`AppointmentConflict.resource_ids`**: cuáles de los recursos que el turno ocupa chocaron, en el orden de
+    `occupied_resource_ids`. Sin esto el vertical no puede distinguir «el profesional está ocupado» de «la sala está
+    ocupada», y la única forma de averiguarlo es volver a mirar los turnos afuera del candado, que es el defecto. La
+    excepción conserva `args` (`str(exc)` sigue siendo el id) y el default es vacío.
+  - **`reschedule(…, secondary_resource_ids=None)`**: mover un turno puede cambiarlo de sala (el consultorio del bloque que
+    cubre el horario nuevo). Sin el parámetro el vertical tendría que guardar la sala nueva con `save()` después de mover,
+    fuera de la transacción. `None` conserva los secundarios; `()` los libera.
+  - **Orden de candados**: `reserve()` y `relocate()` piden las filas con `ORDER BY resources.id`. Con un solo recurso por
+    turno no importaba; con dos, dos transacciones que comparten profesional y sala deben tomarlas en el mismo orden o
+    pueden cruzarse. No hay un deadlock medido —el plan daba el mismo orden a las dos—, es la garantía en vez de la
+    casualidad.
+- Consecuencias:
+  - Cambio 100% aditivo, sin migración y sin tocar el puerto `AppointmentRepository`: `relocate` ya validaba y escribía el
+    turno completo, secundarios incluidos (`_sync_secondary_rows`).
+  - 🔴 **Lo que el consumidor tiene que hacer** (MedLibra, su ADR-042): dar de alta cada sala como `Resource`, ponerla en
+    `secondary_resource_ids` del turno, dejar de chequearla aparte y traducir `AppointmentConflict.resource_ids` a su
+    mensaje. Los `TimeBlock` de la sala (mantenimiento) ya se chequean contra todos los recursos ocupados; el vertical tiene
+    que cargárselos al `InMemoryScheduler` si quiere usarlos.
+  - Un `Resource` de sala aparece en cualquier listado de recursos del vertical; filtrarlo es del vertical (el motor no tiene
+    «tipo» de recurso y no lo gana por esto).
+  - Un sobreturno (`allow_overbooking`) relaja el choque de **todos** los recursos, la sala incluida; un vertical que no
+    quiera sobreturnos sobre una sala no debe pedirlos.

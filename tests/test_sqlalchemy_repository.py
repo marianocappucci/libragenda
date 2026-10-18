@@ -114,3 +114,18 @@ def test_transition_log_keeps_a_creation_entry_without_a_previous_status():
                                      datetime(2026, 7, 1, 9, tzinfo=UTC)))
 
     assert log.list_for("apt-1")[0].from_status is None
+
+
+def test_relocate_moves_the_secondary_resources_in_the_same_transaction():
+    """ADR-016: moving a booking can change its room, and the join rows follow."""
+    repository = make_repository()
+    repository.add(booked(secondary=("room-2", "equipo-7")))
+    moved = Appointment("apt-1", "doctor-1", "service-1", "client-1",
+                        datetime(2026, 7, 20, 12, tzinfo=UTC), timedelta(minutes=45),
+                        secondary_resource_ids=("room-3", "equipo-7"))
+
+    stored = repository.relocate(moved, lambda existing: moved)
+
+    assert stored.secondary_resource_ids == ("room-3", "equipo-7")
+    assert repository.get("apt-1").secondary_resource_ids == ("room-3", "equipo-7")
+    assert repository.get("apt-1").starts_at.hour == 12

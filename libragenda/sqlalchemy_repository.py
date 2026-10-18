@@ -319,8 +319,12 @@ class SqlAlchemyAppointmentRepository:
         """Validate and insert an appointment in one database transaction.
 
         PostgreSQL locks the occupied resource rows so concurrent schedulers
-        serialize on the same resource. SQLite has no row locks, so acquire
-        its writer lock before reading the candidate set instead.
+        serialize on the same resource. "Occupied" is the primary resource
+        **and the secondary ones** (ADR-009): that is what makes a shared room
+        as safe as a shared professional (ADR-016). The rows are locked in id
+        order, so two bookings that share two resources queue in the same
+        order and cannot deadlock each other. SQLite has no row locks, so
+        acquire its writer lock before reading the candidate set instead.
         """
         with self.session_factory.begin() as session:
             if session.bind.dialect.name == "sqlite":
@@ -330,6 +334,7 @@ class SqlAlchemyAppointmentRepository:
                 session.scalars(
                     select(ResourceRow)
                     .where(ResourceRow.id.in_(occupied_ids))
+                    .order_by(ResourceRow.id)
                     .with_for_update()
                 ).all()
             if session.get(AppointmentRow, appointment.id) is not None:
@@ -368,8 +373,8 @@ class SqlAlchemyAppointmentRepository:
                 session.scalars(
                     select(ResourceRow)
                     .where(ResourceRow.id.in_(occupied_ids))
+                    .order_by(ResourceRow.id)
                     .with_for_update()
-                    
                 ).all()
             row = session.get(AppointmentRow, appointment.id)
             if row is None:

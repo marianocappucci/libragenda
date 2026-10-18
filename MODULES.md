@@ -57,7 +57,11 @@
   feriados ni bloqueos, y marca `Appointment.overbooked` únicamente si el
   turno se superpuso de verdad. Todos los verbos aceptan un `actor` opcional
   que va al historial; `history()` devuelve las transiciones del turno,
-  creación incluida.
+  creación incluida. Un choque levanta `AppointmentConflict`, cuyo
+  `resource_ids` dice **cuáles** de los recursos del turno (primario y
+  secundarios) chocaron; `reschedule(…, secondary_resource_ids=…)` mueve
+  también la sala. Los recursos secundarios se traban y se validan en la
+  misma transacción que el primario (ADR-016).
 - `repositories`: interfaz de turnos + memoria; interfaz de recordatorios
   enviados + memoria; interfaz de depósitos + memoria; interfaz del historial
   de transiciones + memoria (`TransitionLogRepository`, append-only: sin

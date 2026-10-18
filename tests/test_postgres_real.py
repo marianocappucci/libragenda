@@ -179,3 +179,35 @@ def test_un_datetime_naive_se_toma_como_utc_en_los_dos(dos_motores):
     esperado = naive.replace(tzinfo=UTC)
     assert pg.get("a77").starts_at == esperado
     assert lite.get("a77").starts_at == esperado
+
+
+def test_reserve_y_relocate_traban_los_recursos_en_orden_de_id():
+    """ADR-016: dos turnos que comparten DOS recursos hacen cola en el mismo orden.
+
+    Con la sala como recurso secundario un turno traba dos filas. Si cada
+    transaccion las pidiera en el orden que le da el plan, dos que compartan
+    profesional y sala podrian tomarlas cruzadas y matarse por deadlock. El
+    orden por id lo hace imposible; se mira en el SQL que sale, que es lo unico
+    que lo prueba sin esperar a que un plan distinto lo rompa.
+    """
+    from sqlalchemy import event
+
+    repo = _repo(PG_URL)
+    emitidas: list[str] = []
+    engine = repo.session_factory.kw["bind"]
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def capturar(conn, cursor, statement, parameters, context, executemany):
+        if "FOR UPDATE" in statement:
+            emitidas.append(statement)
+
+    turno = Appointment(
+        id="a1", resource_id="r1", service_id="s1", client_id="c1",
+        starts_at=datetime(2026, 8, 12, 8, 0, tzinfo=UTC), duration=timedelta(minutes=30),
+        status=AppointmentStatus.CONFIRMED, branch_id="b1", secondary_resource_ids=("r2",),
+    )
+    repo.reserve(turno, lambda existentes: turno)
+    repo.relocate(turno, lambda existentes: turno)
+
+    assert len(emitidas) == 2, emitidas
+    assert all("ORDER BY resources.id" in sql for sql in emitidas), emitidas

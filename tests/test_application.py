@@ -424,6 +424,78 @@ class SnapshotBarrierRepository:
         return self._repository.relocate(appointment, validator)
 
 
+def _two_doctors_and_a_room():
+    scheduler = InMemoryScheduler([
+        Availability("doctor-1", 0, time(9), time(18)),
+        Availability("doctor-9", 0, time(9), time(18)),
+    ])
+    scheduler.create(Appointment("first", "doctor-1", "service-1", "client-1",
+                                 datetime(2026, 7, 20, 10), timedelta(minutes=45),
+                                 secondary_resource_ids=("room-2",)))
+    return scheduler
+
+
+def test_a_conflict_names_the_resource_that_collided():
+    """ADR-016: the error says whether it was the room, the professional or both."""
+    scheduler = _two_doctors_and_a_room()
+
+    only_the_room = Appointment("a", "doctor-9", "service-1", "client-2",
+                                datetime(2026, 7, 20, 10), timedelta(minutes=45),
+                                secondary_resource_ids=("room-2",))
+    with pytest.raises(AppointmentConflict) as room:
+        scheduler.create(only_the_room)
+    assert room.value.resource_ids == ("room-2",)
+
+    only_the_doctor = Appointment("b", "doctor-1", "service-1", "client-2",
+                                  datetime(2026, 7, 20, 10), timedelta(minutes=45),
+                                  secondary_resource_ids=("room-8",))
+    with pytest.raises(AppointmentConflict) as doctor:
+        scheduler.create(only_the_doctor)
+    assert doctor.value.resource_ids == ("doctor-1",)
+
+    both = Appointment("c", "doctor-1", "service-1", "client-2",
+                       datetime(2026, 7, 20, 10), timedelta(minutes=45),
+                       secondary_resource_ids=("room-2",))
+    with pytest.raises(AppointmentConflict) as everything:
+        scheduler.create(both)
+    assert everything.value.resource_ids == ("doctor-1", "room-2")
+
+
+def test_an_appointment_conflict_raised_by_hand_still_works_without_resources():
+    error = AppointmentConflict("apt-1")
+    assert str(error) == "apt-1"
+    assert error.resource_ids == ()
+
+
+def test_reschedule_can_move_the_secondary_resources_along():
+    scheduler = _two_doctors_and_a_room()
+
+    kept = scheduler.reschedule("first", datetime(2026, 7, 20, 12))
+    assert kept.secondary_resource_ids == ("room-2",)
+
+    moved = scheduler.reschedule("first", datetime(2026, 7, 20, 13),
+                                 secondary_resource_ids=("room-3",))
+    assert moved.secondary_resource_ids == ("room-3",)
+    assert scheduler.get("first").secondary_resource_ids == ("room-3",)
+
+    released = scheduler.reschedule("first", datetime(2026, 7, 20, 14),
+                                    secondary_resource_ids=())
+    assert released.secondary_resource_ids == ()
+
+
+def test_reschedule_validates_the_new_room_and_leaves_the_booking_untouched():
+    scheduler = _two_doctors_and_a_room()
+    scheduler.create(Appointment("second", "doctor-9", "service-1", "client-2",
+                                 datetime(2026, 7, 20, 10), timedelta(minutes=45),
+                                 secondary_resource_ids=("room-3",)))
+
+    with pytest.raises(AppointmentConflict) as busy:
+        scheduler.reschedule("first", datetime(2026, 7, 20, 10),
+                             secondary_resource_ids=("room-3",))
+    assert busy.value.resource_ids == ("room-3",)
+    assert scheduler.get("first").secondary_resource_ids == ("room-2",)
+
+
 def test_concurrent_same_slot_is_serialized_by_repository():
     repository = SnapshotBarrierRepository()
     schedulers = [
