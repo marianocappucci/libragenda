@@ -39,7 +39,19 @@ class AppointmentNotFound(ScheduleError):
 
 
 class AppointmentConflict(ScheduleError):
-    pass
+    """The slot is taken by another appointment that shares a resource.
+
+    `resource_ids` says **which** of the candidate's occupied resources (the
+    primary one and the secondary ones, in that order) the colliding
+    appointments hold. It lets a vertical tell "the professional is busy" from
+    "the room is busy" without re-running the check itself -- which, outside the
+    reservation's lock, is exactly the race ADR-016 closes. Empty when the
+    raiser did not say, so existing `raise AppointmentConflict(id)` keeps working.
+    """
+
+    def __init__(self, *args: object, resource_ids: tuple[str, ...] = ()) -> None:
+        super().__init__(*args)
+        self.resource_ids = resource_ids
 
 
 class AppointmentUnavailable(ScheduleError):
@@ -194,8 +206,15 @@ class InMemoryScheduler:
         reason: str | None = None,
         allow_overbooking: bool = False,
         actor: str | None = None,
+        secondary_resource_ids: tuple[str, ...] | None = None,
     ) -> Appointment:
         """Move a booking to another slot, validating and writing atomically.
+
+        `secondary_resource_ids` moves the secondary resources along with the
+        slot (ADR-016): a booking that occupies a room may land in another
+        room when it moves, and the new room has to be validated -- and locked
+        -- in the same transaction as the new time. `None` keeps the ones the
+        booking already has; `()` releases them.
 
         `relocate` and not `save`: moving is read-validate-write over a slot
         that everyone else is competing for, exactly like booking. Validating
@@ -210,6 +229,11 @@ class InMemoryScheduler:
             current,
             starts_at=starts_at,
             reason=reason if reason is not None else current.reason,
+            secondary_resource_ids=(
+                current.secondary_resource_ids
+                if secondary_resource_ids is None
+                else secondary_resource_ids
+            ),
         )
         moved = self.repository.relocate(
             candidate,
@@ -294,10 +318,15 @@ class InMemoryScheduler:
         if existing is None:
             existing = self.repository.list()
         existing = [item for item in existing if item.id != exclude_id]
-        if not find_conflicts(appointment, existing, gap=policy.slot_interval):
+        conflicts = find_conflicts(appointment, existing, gap=policy.slot_interval)
+        if not conflicts:
             return False
         if not allow_overbooking:
-            raise AppointmentConflict(appointment.id)
+            held = {rid for item in conflicts for rid in item.occupied_resource_ids}
+            raise AppointmentConflict(
+                appointment.id,
+                resource_ids=tuple(rid for rid in appointment.occupied_resource_ids if rid in held),
+            )
         self._check_overbooking_cap(appointment, policy, existing)
         return True
 

@@ -1,5 +1,27 @@
 # Changelog — LibraGenda
 
+## v0.13.0 — 2026-10-17
+
+- 🔴 **Un recurso secundario (un consultorio) se traba y se valida en la misma transacción que el primario** (ADR-016).
+  Lo que MedLibra necesitaba —que dos profesionales no se queden el mismo consultorio a la misma hora— **ya lo hacía el
+  motor** desde ADR-009: `reserve()` y `relocate()` toman `SELECT … FOR UPDATE` sobre **todos** los `occupied_resource_ids`
+  y `find_conflicts()` compara la intersección. El defecto estaba en el consumidor, que chequeaba la sala aparte y afuera de
+  esa transacción. Lo que faltaba acá era poder **usarlo bien**:
+
+  - `AppointmentConflict.resource_ids`: cuáles de los recursos del turno chocaron (el primario y/o los secundarios, en ese
+    orden). Un vertical puede decir «consultorio ocupado» o «profesional ocupado» sin volver a mirar los turnos —que, afuera
+    del candado, es la carrera que se está cerrando—. Vacío si quien levanta la excepción no lo dice: `AppointmentConflict(id)`
+    sigue andando.
+  - `InMemoryScheduler.reschedule(…, secondary_resource_ids=None)`: mover un turno puede cambiarlo de sala, y la sala nueva
+    se valida y se traba junto con el horario nuevo. `None` conserva las que tiene; `()` las libera.
+  - `reserve()`/`relocate()` traban las filas de recurso **en orden de id** (`ORDER BY resources.id`): con dos recursos por
+    turno, dos reservas que comparten profesional y sala hacen cola en el mismo orden y no pueden matarse por deadlock.
+    No era un defecto medido —el plan de PostgreSQL daba el mismo orden a las dos—; es lo que lo garantiza.
+
+  Sin migración y sin cambio de puerto: cambios aditivos. Cubierto por `tests/test_concurrencia_del_hueco.py` (dos
+  profesionales a la misma sala, a la vez, en PostgreSQL real; **verde también contra v0.12.0**, que es la prueba de que el
+  motor ya cerraba la carrera) y `tests/test_postgres_real.py` (el orden de los candados, que sí se pone rojo sin el cambio).
+
 ## v0.12.0 — 2026-10-16
 
 - 🔴 **El esquema se crea de a un proceso por vez** (`libragenda.crear_esquema`, ADR-015). MedLibra y Gestiolibra crean sus
