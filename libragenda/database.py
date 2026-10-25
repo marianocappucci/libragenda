@@ -35,6 +35,11 @@ def configure(url: str, **engine_options) -> None:
     the application starts serving traffic.
     """
     global _engine, _session_factory
+    # `postgresql://` a secas lo resuelve SQLAlchemy a psycopg2, que este paquete no instala (trae psycopg 3): el
+    # mismo `normalizar_url` que usan las migraciones. Lo necesita el nodo de LibraEdge, que escribe la URL así.
+    from libragenda.migrar import normalizar_url
+
+    url = normalizar_url(url)
     is_sqlite = url.startswith("sqlite:///")
     if url == "sqlite:///:memory:":
         engine_options.setdefault("connect_args", {"check_same_thread": False})

@@ -60,3 +60,13 @@ def test_sqlite_actually_rejects_a_foreign_key_violation():
                 session.flush()
     finally:
         reset()
+
+
+def test_una_url_postgresql_a_secas_usa_psycopg_3():
+    """El nodo de LibraEdge escribe `postgresql://` sin driver: sin normalizar, SQLAlchemy pide psycopg2, que no se
+    instala, y la app no arranca («No module named 'psycopg2'», libraedge#173)."""
+    try:
+        configure("postgresql://usuario:clave@127.0.0.1:1/nada")
+        assert get_engine().dialect.driver == "psycopg"
+    finally:
+        reset()
