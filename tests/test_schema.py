@@ -33,6 +33,7 @@ def test_full_schema_has_core_tables_and_foreign_keys():
         "time_blocks", "availability_exceptions", "appointments", "holidays",
         "sent_reminders", "deposits", "appointment_resources",
         "appointment_transitions", "agenda_policies",
+        "agenda_node_attendances", "agenda_applied_attendances",
     }
     foreign_keys = inspector.get_foreign_keys("appointments")
     assert {(item["constrained_columns"][0], item["referred_table"]) for item in foreign_keys} == {

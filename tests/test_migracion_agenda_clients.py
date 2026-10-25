@@ -24,7 +24,7 @@ from sqlalchemy.engine import make_url
 from libragenda import migrar
 
 ULTIMA_ANTES = "0009_occupancy_and_history"
-CABEZA = "0010_agenda_clients"
+CABEZA = "0011_node_attendances"
 NUEVA = migrar.TABLA_DE_VERSION
 VIEJA = migrar.TABLA_DE_VERSION_VIEJA
 
@@ -246,6 +246,8 @@ def test_si_agenda_clients_ya_existe_la_migracion_aborta_y_no_deja_nada_a_medias
 def test_el_downgrade_no_pisa_la_clients_de_libracore(url):
     """En una base ya unida `clients` es la del motor: volver atrás no puede renombrar encima ni perder filas."""
     migrar.upgrade(url)
+    # Primero se baja lo posterior a la `0010` (la `0011` no toca `clients`): el choque es con la `0010`.
+    command.downgrade(migrar.configuracion(url), "0010_agenda_clients")
     _sql(url, "CREATE TABLE clients (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
     _sql(url, "INSERT INTO clients (id, name) VALUES (1, 'Del motor')")
 
@@ -253,7 +255,7 @@ def test_el_downgrade_no_pisa_la_clients_de_libracore(url):
         command.downgrade(migrar.configuracion(url), ULTIMA_ANTES)
 
     assert _consulta(url, "SELECT id, name FROM clients") == [(1, "Del motor")]
-    assert _revisiones(url, NUEVA) == [CABEZA]
+    assert _revisiones(url, NUEVA) == ["0010_agenda_clients"]
 
 
 # ── La convivencia con LibraCore en una sola base (sólo PostgreSQL) ──────
