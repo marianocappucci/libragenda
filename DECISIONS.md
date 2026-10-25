@@ -446,3 +446,80 @@ Registro ADR. Las decisiones no se borran; si dejan de aplicar, se marcan como r
     «tipo» de recurso y no lo gana por esto).
   - Un sobreturno (`allow_overbooking`) relaja el choque de **todos** los recursos, la sala incluida; un vertical que no
     quiera sobreturnos sobre una sala no debe pedirlos.
+
+## ADR-017 — La tabla de versión de Alembic es propia (`alembic_version_libragenda`), con autorrenombre
+
+- Estado: aceptada.
+- Fecha: 2026-10-25
+- Contexto: hasta la v0.13.0 la cadena de LibraGenda guardaba su revisión en `alembic_version`, que es el nombre por
+  defecto de Alembic y **también** el de la cadena de LibraCore (`libracore-migrar`). No importaba mientras cada producto
+  tenía dos bases (GestioLibra y MedLibra: el dominio con LibraGenda, el core con LibraCore). Con **una sola base por
+  producto** (decisión del humano, 2026-10-22; ya hecha en LibraClub y LibraCargo) las dos cadenas migran en la misma
+  base, y dos cadenas sobre una tabla de versión se pisan la revisión: la segunda en correr cree que la primera es suya y
+  muere con *Can't locate revision*. Además `libracore-unir-bases` corta con una tabla de versión repetida de cadenas
+  distintas (ADR-078 de LibraCore, punto 4). LibraCommerce, LibraClub, LibraCargo, LibraDesk, GestioLibra y MedLibra ya
+  usan `alembic_version_<nombre>`; LibraGenda era la que faltaba.
+- Decisión: la tabla de versión pasa a `alembic_version_libragenda` (`libragenda.migrar.TABLA_DE_VERSION`), la que lee
+  `migrations/env.py`. Y **el renombre lo hace la propia migración**, no el operador:
+  `adoptar_la_tabla_de_version_vieja` corre adentro de `begin_transaction()`, antes de las revisiones.
+  - Renombra `alembic_version` a la propia **sólo si** la propia no existe, la vieja existe y **todas** sus revisiones son
+    de esta cadena. Una `alembic_version` vacía, o con alguna revisión ajena (la de LibraCore en una base unida), no se
+    toca: esa tabla es del motor.
+  - También renombra la restricción `alembic_version_pkc` a `alembic_version_libragenda_pkc`. Un `RENAME` de tabla no
+    renombra su clave primaria, y en PostgreSQL el índice de la clave es un objeto del schema: con el nombre repetido la
+    cadena de LibraCore moriría al crear la suya (*relation "alembic_version_pkc" already exists*; medido acá con el test
+    `test_convive_con_las_tablas_de_libracore_en_la_misma_base`, y en LibraCargo el 2026-10-05).
+  - Va en la misma transacción que las migraciones: en PostgreSQL, si una revisión falla, el renombre se deshace.
+- Consecuencias:
+  - Un consumidor no hace nada: `libragenda-migrar upgrade` (o `alembic upgrade head`) adopta la tabla vieja sola. Una
+    base nueva crea la propia directamente.
+  - 🔴 Cualquier cosa que lea `alembic_version` esperando la revisión de LibraGenda tiene que leer la nueva. En los
+    consumidores: los chequeos de «migraciones al día» y los scripts de deploy. `libraauth-migrar` y `libracore-migrar`
+    no se ven afectados.
+  - `libragenda-migrar stamp` sobre una base que nunca tuvo la cadena crea la tabla propia (no la vieja).
+  - `libragenda-migrar current` también adopta: leer la revisión de una base de antes la renombra. Es lo que hace falta
+    para que conteste bien.
+
+## ADR-018 — `clients` pasa a `agenda_clients`, y ninguna tabla de LibraGenda puede llamarse como una del motor
+
+- Estado: aceptada.
+- Fecha: 2026-10-25
+- Contexto: LibraCore declara su tabla `clients` (id entero, nueve claves foráneas que la apuntan, `libracore:libracore/db/
+  schema.py`) y LibraGenda la suya (id `VARCHAR(100)`). Por eso GestioLibra y MedLibra tuvieron siempre dos bases
+  (`docker/postgres-init/10-base-de-libracore.sql` lo dice). Con una sola base por producto no pueden convivir, y
+  `libracore-unir-bases` corta con «La tabla clients existe en el core y en el dominio» (medido el 2026-10-25 sobre un
+  dominio v0.13.0 y un core de `origin/develop`, junto con el choque de `alembic_version` del ADR-017: «2 impedimentos»).
+  No se renombra la de LibraCore: la usan todos los productos.
+- Decisión:
+  - **Migración `0010_agenda_clients`: `ALTER TABLE clients RENAME TO agenda_clients`**, y nada más. No copia ni borra
+    una fila. Las claves foráneas que apuntan a la tabla la siguen solas (PostgreSQL y SQLite >= 3.26): la de
+    `appointments` y las de los productos (`client_billing` de GestioLibra; `patients` y `walkins` de MedLibra). La tabla
+    no tiene secuencia (el id es texto). Se renombra además su clave primaria (`clients_pkey` → `agenda_clients_pkey`):
+    no choca (PostgreSQL le pone `clients_pkey1` a la clave sin nombre de la `clients` del motor, medido), pero dejaría
+    dos claves con el nombre cruzado. El downgrade es simétrico.
+  - El modelo es `ClientRow.__tablename__ = "agenda_clients"` y `AppointmentRow.client_id` apunta a `agenda_clients.id`.
+    El prefijo `agenda_` es la convención para cualquier tabla de LibraGenda que pueda chocar.
+  - **Una guarda** (`tests/test_nombres_de_tablas.py`): ningún nombre de tabla de LibraGenda —modelos y cadena de
+    migraciones— puede estar entre los de LibraCore y LibraAuth. LibraGenda no depende de LibraCore, así que el CI compara
+    contra una copia de la lista; si `libracore` está instalado, otro test compara la copia contra su cadena real y se
+    pone rojo cuando el motor suma una tabla.
+  - Si la migración encuentra `agenda_clients` ya creada (la aplicación arrancó con `create_all` y el código nuevo antes
+    de migrar) **aborta con un mensaje que lo dice** y no toca nada: no borra tablas a ciegas.
+- Consecuencias:
+  - 🔴 **Para los consumidores (GestioLibra y MedLibra, en sus propios PR):**
+    1. subir el pin de libragenda a v0.14.0;
+    2. cambiar todo `ForeignKey("clients.id")` por `ForeignKey("agenda_clients.id")` (`client_billing`, `patients`,
+       `walkins`) y toda consulta SQL a mano o `Table("clients")` que apunte a la tabla de LibraGenda;
+    3. correr `libragenda-migrar upgrade` **antes** de arrancar la aplicación nueva: un producto con el pin viejo y la
+       base ya migrada no arranca (no existe `clients`), y uno con el pin nuevo y la base sin migrar crea una
+       `agenda_clients` vacía con `create_all`;
+    4. **en una base nueva, la cadena de LibraGenda tiene que correr antes que la de LibraCore**: la revisión `0002`
+       crea `clients` y, si LibraCore ya creó la suya, falla. (No se cambió la `0002` para no romper las bases que ya la
+       aplicaron.) El orden de los productos ya es ese: `libragenda-migrar`, `libraauth-migrar`, `libracore-migrar`.
+  - `libragenda-migrar downgrade` más allá de la `0010` no se puede hacer en una base ya unida con LibraCore (`clients`
+    es la del motor): aborta con el mensaje de revertir primero la unión.
+  - **Fuera de alcance: LibraCommerce.** Su tabla `branches` se llama como la de LibraGenda. Ningún producto usa los dos
+    motores en una misma base (los de agenda no usan LibraCommerce; LibraDesk lo usa y no usa las tablas de LibraGenda),
+    y la guarda no lo cubre. Si algún día se juntan, hay que renombrar una de las dos.
+  - Los nombres de las demás tablas de LibraGenda (`branches`, `resources`, `services`, `appointments`, `deposits`, …)
+    no chocan con los de LibraCore ni con los de LibraAuth (verificado el 2026-10-25 contra `origin/develop`, v1.192.1).

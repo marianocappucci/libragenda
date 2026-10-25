@@ -112,7 +112,10 @@ class HolidayRow(Base):
 
 
 class ClientRow(Base):
-    __tablename__ = "clients"
+    # 🔴 `agenda_clients`, no `clients` (ADR-018): `clients` es también una tabla de LibraCore, con id entero. Con una sola
+    # base por producto las dos tienen que poder convivir. Los productos que apuntan acá con una clave foránea
+    # (`client_billing`, `patients`, `walkins`) usan `ForeignKey("agenda_clients.id")`.
+    __tablename__ = "agenda_clients"
 
     id: Mapped[str] = mapped_column(String(100), primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
@@ -186,7 +189,7 @@ class AppointmentRow(Base):
     id: Mapped[str] = mapped_column(String(100), primary_key=True)
     resource_id: Mapped[str] = mapped_column(ForeignKey("resources.id"), index=True)
     service_id: Mapped[str] = mapped_column(ForeignKey("services.id"), index=True)
-    client_id: Mapped[str] = mapped_column(ForeignKey("clients.id"), index=True)
+    client_id: Mapped[str] = mapped_column(ForeignKey("agenda_clients.id"), index=True)
     starts_at: Mapped[datetime] = mapped_column(UtcDateTime(), index=True)
     duration_seconds: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(30), index=True)
