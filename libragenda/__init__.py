@@ -36,6 +36,7 @@ __all__ = [
     "first_time_at",
 ]
 
+from . import atencion_en_nodo
 from .application import (
     AppointmentConflict,
     AppointmentNotFound,
@@ -44,6 +45,7 @@ from .application import (
     InvalidTransition,
     OverbookingLimitReached,
     ResourceBranchMismatch,
+    can_transition,
 )
 from .availability_repository import SqlAlchemyAvailabilityRepository
 from .catalog_repository import SqlAlchemyCatalogRepository

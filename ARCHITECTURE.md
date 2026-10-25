@@ -14,6 +14,7 @@ El motor no incluye lógica clínica, gastronómica ni de facturación, y actual
 - `repositories.py`: puertos y adaptadores en memoria.
 - `sqlalchemy_repository.py`, `catalog_repository.py`: persistencia SQLAlchemy.
 - `database.py`: configuración de conexión del proceso consumidor.
+- `atencion_en_nodo.py`: atender un turno en un nodo sin conexión (LibraEdge) y aplicarlo en el central, idempotente y con la lista «a revisar» (ADR-019). No depende de LibraEdge: el producto pasa el outbox.
 - `migrations/`: cambios de esquema gestionados por Alembic.
 
 ## Persistencia

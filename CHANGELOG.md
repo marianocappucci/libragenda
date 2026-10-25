@@ -1,5 +1,37 @@
 # Changelog — LibraGenda
 
+## v0.15.0 — 2026-10-25
+
+- 🔴 **Atender un turno en un nodo sin conexión** (ADR-019; **migración `0011_node_attendances`**, aditiva y con
+  downgrade). Módulo nuevo `libragenda.atencion_en_nodo`. Fuera de un nodo no cambia nada.
+  - **En el nodo**: `atender_en_nodo(sesion, turno_id, estado, *, at, actor, extra)` deja una **fila propia**
+    (`agenda_node_attendances`) y encola la operación **`turno.atendido`** en la misma transacción. Estados: en curso,
+    completado o «no vino», con las reglas de siempre (`can_transition`, ahora público) contra el estado efectivo.
+    `extra` es un diccionario libre para que el producto adjunte lo suyo (los pagos). `atenciones_del_nodo` y
+    `estado_efectivo` muestran la agenda con la atención encima del espejo.
+  - **En el central**: `aplicar_turno_atendido(sesion, operacion, *, al_aplicar)` es **idempotente** (la misma operación
+    dos veces, o dos a la vez, es un solo efecto), aplica la transición con la hora del nodo y, si el turno cambió en la
+    web (cancelado, movido, ya atendido, en otro estado, inexistente), **la atención igual vale** y el turno queda
+    **«a revisar»**: `turnos_a_revisar(sesion)` y `marcar_revisada(sesion, atencion_id)`. `registrar_en(despachador)`
+    lo registra en el despachador de LibraEdge del producto, sin que LibraGenda dependa de LibraEdge.
+  - `encolar_en_nodo(...)`: la costura para que el producto encole lo suyo por la misma configuración (la demanda
+    espontánea de MedLibra, que vive en el producto).
+  - Tablas nuevas: `agenda_node_attendances` (la fila propia del nodo; **no se espeja**) y
+    `agenda_applied_attendances` (lo aplicado y la lista a revisar; el producto la puede espejar al nodo, de sólo
+    lectura).
+
+  ⚠️ **Lo que tiene que hacer cada consumidor (GestioLibra en el PR 9, MedLibra en el PR 10):**
+  1. subir el pin a `v0.15.0` y correr `libragenda-migrar upgrade` antes de arrancar (dos tablas nuevas, nada más);
+  2. `atencion_en_nodo.configurar(AtencionesEnNodo(nodo=..., encolar=...))` al armar la app, en el nodo y en el central;
+  3. en el central, `atencion_en_nodo.registrar_en(despachador, abrir_sesion=..., al_aplicar=...)`;
+  4. en el nodo, el endpoint de «atender» llama a `atender_en_nodo` en la transacción del cobro, con los pagos en `extra`;
+  5. en el aprovisionamiento: no espejar `agenda_node_attendances`; sí `agenda_applied_attendances` (sin claves
+     foráneas, no es una tabla con alta en el nodo).
+
+  Cubierto por `tests/test_atencion_en_nodo.py` (SQLite y PostgreSQL: el nodo, la transición normal, la idempotencia,
+  cada conflicto, la lista a revisar, la validación y de punta a punta con dos bases) y
+  `tests/test_migracion_node_attendances.py` (up/down en los dos motores).
+
 ## v0.14.0 — 2026-10-25
 
 - 🔴 **`clients` pasa a `agenda_clients`** (ADR-018, migración `0010_agenda_clients`). LibraCore tiene su propia tabla

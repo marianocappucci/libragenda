@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import (
+    JSON,
     Date,
     DateTime,
     ForeignKey,
@@ -237,6 +238,59 @@ class AppointmentTransitionRow(Base):
     at: Mapped[datetime] = mapped_column(UtcDateTime(), index=True)
     actor: Mapped[str | None] = mapped_column(String(200), nullable=True)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class NodeAttendanceRow(Base):
+    """Una atención tomada en un nodo sin conexión: la fila PROPIA del nodo (ADR-019).
+
+    El turno, en el nodo, es una fila del espejo y la guarda de LibraEdge no deja escribirla. Atenderlo escribe esta
+    tabla, que el nodo no espeja (no existe en el central con este contenido: ver `AppliedAttendanceRow`). Sin clave
+    foránea a `appointments` a propósito: el espejo reapunta y borra filas de esa tabla y no tiene que llevarse la
+    atención puesta. `orden` numera las atenciones de un mismo turno (en curso, completado…) y su unicidad es lo que
+    cierra la carrera entre dos pestañas.
+    """
+
+    __tablename__ = "agenda_node_attendances"
+    __table_args__ = (UniqueConstraint("appointment_id", "orden", name="uq_agenda_node_attendances_orden"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    appointment_id: Mapped[str] = mapped_column(String(100), index=True)
+    orden: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(30))
+    at: Mapped[datetime] = mapped_column(UtcDateTime())
+    actor: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    seen: Mapped[dict] = mapped_column(JSON)
+    extra: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime())
+
+
+class AppliedAttendanceRow(Base):
+    """Una atención de un nodo que el central ya aplicó: el registro que la hace idempotente y la lista «a revisar».
+
+    La clave es el `atencion_id` que genera el nodo: la misma operación entregada dos veces es una sola fila y un solo
+    efecto. `resultado` es `aplicada` o `a_revisar`; las `a_revisar` son las que chocaron con un cambio hecho en la web
+    y esperan a que alguien las mire (`revisada_at` vacío). Sin clave foránea a `appointments`: una atención de un turno
+    que ya no existe tiene que poder quedar anotada igual (la atención y el cobro cuentan).
+    """
+
+    __tablename__ = "agenda_applied_attendances"
+
+    atencion_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    node_id: Mapped[str] = mapped_column(String(100))
+    appointment_id: Mapped[str] = mapped_column(String(100), index=True)
+    status: Mapped[str] = mapped_column(String(30))
+    at: Mapped[datetime] = mapped_column(UtcDateTime())
+    actor: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    extra: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    resultado: Mapped[str] = mapped_column(String(20), index=True)
+    motivo: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    detalle: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status_before: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    status_after: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    applied_at: Mapped[datetime] = mapped_column(UtcDateTime())
+    reviewed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class SentReminderRow(Base):

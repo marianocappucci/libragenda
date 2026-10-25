@@ -523,3 +523,94 @@ Registro ADR. Las decisiones no se borran; si dejan de aplicar, se marcan como r
     y la guarda no lo cubre. Si algún día se juntan, hay que renombrar una de las dos.
   - Los nombres de las demás tablas de LibraGenda (`branches`, `resources`, `services`, `appointments`, `deposits`, …)
     no chocan con los de LibraCore ni con los de LibraAuth (verificado el 2026-10-25 contra `origin/develop`, v1.192.1).
+
+
+## ADR-019 — Atender un turno en un nodo sin conexión: fila propia, `turno.atendido` y un aplicador idempotente
+
+- Estado: aceptada.
+- Fecha: 2026-10-25
+- Contexto: GestioLibra y MedLibra van a tener versión de escritorio (un nodo de LibraEdge en la PC del local). Decisiones
+  del humano (2026-10-21, 2026-10-22 y 2026-10-25): sin internet la agenda es **de sólo consulta**, pero **atender** un
+  turno ya dado (en curso, completado, «no vino») y cobrarlo se puede; y si en la web lo cancelaron o lo movieron
+  mientras tanto, **la atención y el cobro valen** y el turno queda **«a revisar»**. En el nodo, `appointments` es una fila
+  del espejo y la guarda de LibraEdge (ADR-019 de ese repo, SQLSTATE `LE001`) no deja escribirla; escribir ahí tampoco
+  sirve, porque el próximo cambio del central la pisaría. Como lo comparten los dos productos, va **en LibraGenda**, no
+  en cada uno (el arreglo de fondo vive en el motor).
+- Qué ya existía (se miró antes): el molde de LibraClub (`servicios/reservas_nodo.py`, su ADR-022): configuración global
+  con el `nodo` y los ganchos que encolan en la transacción, un aplicador idempotente para el despachador del central, y
+  `libraedge` importado sólo al usarse. Las reglas de estado de LibraGenda (`_ALLOWED_TRANSITIONS`) y el historial de
+  transiciones (`appointment_transitions`), de donde salen las horas de «empezó» y «terminó» (`first_time_at`).
+- Decisión:
+  - **LibraGenda no depende de LibraEdge ni de LibraCore.** El producto pasa la función que encola
+    (`AtencionesEnNodo.encolar(sesion, tipo, agregado, id_local, datos)`, corre en la transacción de la sesión) y el
+    despachador al que se registra el aplicador (`registrar_en`). Así lo hace LibraClub. Es global y del proceso
+    (`configurar`); fuera de un nodo `atender_en_nodo` se niega (`NoEsUnNodo`): en el central se atiende con el scheduler.
+  - **La fila propia del nodo es `agenda_node_attendances`** (una por atención, con `orden` por turno; migración
+    `0011_node_attendances`, aditiva y con downgrade). Sin clave foránea a `appointments`: el espejo reapunta y borra filas
+    de esa tabla y no tiene que llevarse la atención puesta. `UNIQUE(appointment_id, orden)` cierra la carrera de dos
+    pestañas. La tabla **no se espeja**. El nodo muestra la agenda con esa fila encima (`atenciones_del_nodo`,
+    `estado_efectivo`) y valida con las reglas de siempre contra ese estado efectivo (`can_transition`, ahora público):
+    en curso → completado vale, completado → «no vino» no. Desde un nodo un turno sólo pasa a `in_progress`,
+    `completed` o `no_show`: no se cancela ni se confirma.
+  - **La operación es `turno.atendido`**, `aggregate_type = "turno"`, `schema_version = 1`, `version = 1`. Lleva
+    `atencion_id` (uuid4 del nodo: **la clave de idempotencia**), `turno_id`, `estado`, `at` (ISO con zona: la hora real,
+    que es la que queda en el historial), `actor`, `visto` (cómo veía el nodo el turno: estado, inicio, duración y
+    recurso) y **`extra`**, un diccionario libre para que el producto adjunte lo suyo —los pagos en GestioLibra y
+    MedLibra—. LibraGenda lo guarda y lo devuelve, no lo mira. Las ids de turno son los del central: el nodo no da
+    turnos, así que no hay ids provisorios acá.
+  - **El aplicador del central (`aplicar_turno_atendido`) es idempotente por `atencion_id`**: la tabla
+    `agenda_applied_attendances` guarda cada atención aplicada y su clave primaria lo hace un solo efecto, también con
+    dos entregas a la vez (`INSERT … ON CONFLICT DO NOTHING`; el turno se traba con `FOR UPDATE` antes de mirarlo). Un
+    `atencion_id` reusado con otro contenido es un error (`AtencionInvalida`, un `ValueError`: el receptor lo manda a
+    revisión manual), no se pisa. Aplica la transición con `can_transition` y escribe el historial con la **hora del
+    nodo**, no la de ahora. Trabaja en la sesión del llamador y no commitea.
+  - **Si el turno cambió en la web, la atención igual queda** (decisión del humano). Va a la lista «a revisar»
+    (`resultado = 'a_revisar'`, `turnos_a_revisar`, `marcar_revisada`) con un motivo:
+
+    | El turno en el central | Efecto sobre el turno | Motivo |
+    |---|---|---|
+    | como lo vio el nodo; transición válida | cambia de estado | (ninguno, `aplicada`) |
+    | se movió (inicio, duración o recurso) y la transición es válida | cambia de estado | `movido` |
+    | cancelado | no se toca (terminal) | `cancelado` |
+    | ya atendido (en curso, completado o «no vino») y la transición no es válida o es la misma | no se toca | `ya_atendido` |
+    | en otro estado desde el que no se puede (p. ej. `pending`) | no se toca | `transicion_invalida` |
+    | no existe | — | `turno_inexistente` |
+
+    Elecciones, para que el humano las pueda corregir: (a) un turno **movido** se completa igual —la atención pasó, la
+    caja sube con ese turno y dejarlo sin completar lo mostraría pendiente de algo que ya se cobró—; (b) uno **cancelado**
+    no se resucita solo: se anota y alguien decide; (c) **«ya atendido» incluye el mismo estado** (completado en la web y
+    en el nodo): puede haberse cobrado dos veces, y es justo lo que alguien tiene que mirar. Una atención en curso del
+    nodo sobre un turno que la web ya empezó **no** es conflicto si la siguiente transición es válida.
+  - **Lo cobrado se conserva siempre.** `extra` queda en el registro aunque el turno vaya a revisar, y el hook
+    `al_aplicar(sesion, atencion)` corre —en la misma transacción y **sólo la primera vez**— también para las atenciones
+    `a_revisar`. Ahí MedLibra manda la consulta y sus pagos a ContaLibra (el central lo hace, no la PC), y GestioLibra
+    registra lo que le haga falta. Si el hook levanta, no queda nada y el receptor reintenta.
+  - **La lista «a revisar» es una consulta de dominio, la pantalla es otro PR.** `agenda_applied_attendances` es una tabla
+    del central que el producto puede espejar al nodo (sólo lectura), así que se ve en las dos puntas. `marcar_revisada`
+    es del central; no cambia el turno (acomodarlo es del scheduler, a mano).
+  - **Sin `SAVEPOINT` en los caminos de escritura.** Con `pysqlite` un `SAVEPOINT` abierto antes de la primera escritura
+    de la transacción la confirma al soltarse, y la atención quedaría escrita aunque lo que el producto hace después en la
+    misma transacción falle (medido con el test del hook que falla). Por eso se usa `INSERT … ON CONFLICT DO NOTHING`
+    (PostgreSQL y SQLite); otro motor cae al camino con `SAVEPOINT`.
+- Fuera de alcance (a propósito):
+  - **La demanda espontánea (`walkins`) de MedLibra** vive en el producto (`app/services/walkins.py`, ADR-031 de MedLibra),
+    no en LibraGenda. La costura es `encolar_en_nodo(sesion, tipo, agregado, id_local, datos)`: el producto encola su
+    propia operación (`walkin.registrado`) por la misma configuración, y no hace nada fuera de un nodo. El «no vino» sí
+    está cubierto acá (`no_show`).
+  - **Dar, mover o cancelar turnos en el nodo** (agenda de sólo consulta). Si algún día se dieran, el molde es el
+    `en_conflicto` de LibraClub, decidido en el central.
+  - **El cobro, la factura y los movimientos de caja**: son del producto (`GANCHOS_DE_CAJA`, `cola_arca`), que los saca
+    del `extra`.
+  - **La transacción del receptor.** `registrar_en` abre por defecto una sesión propia de `libragenda.database` y la
+    confirma sola: es seguro porque el aplicador es idempotente (si el receptor falla después, la entrega se repite y no
+    hace nada). Un producto que quiera todo en la transacción del receptor pasa su propio `abrir_sesion(conexion)`. **No
+    se probó contra el receptor real de LibraEdge** (LibraGenda no lo tiene como dependencia).
+- Consecuencias:
+  - 🔴 **Para GestioLibra y MedLibra (PR 9 y 10 del plan):** subir el pin a v0.15.0 y correr `libragenda-migrar upgrade`
+    **antes** de arrancar (dos tablas nuevas); `configurar(AtencionesEnNodo(...))` al armar la app; en el aprovisionamiento
+    del central, **no** espejar `agenda_node_attendances` y sí `agenda_applied_attendances` (sin claves foráneas, sin
+    `AltaEnNodo`); registrar el aplicador con `registrar_en(despachador, abrir_sesion=..., al_aplicar=...)` en el
+    despachador del central; y en el endpoint de «atender», llamar a `atender_en_nodo` en la misma transacción que el
+    cobro, con los pagos en `extra`. Mostrar la agenda con `atenciones_del_nodo` encima del espejo.
+  - Las dos tablas nuevas llevan el prefijo `agenda_` (ADR-018) y la guarda de nombres las cubre.
+  - Tras `unir-bases`, las dos tablas viajan con la base (no chocan con ninguna del motor).

@@ -90,6 +90,16 @@ _ALLOWED_TRANSITIONS = {
 }
 
 
+def can_transition(current: AppointmentStatus, target: AppointmentStatus) -> bool:
+    """Whether the state machine allows moving from `current` to `target`.
+
+    The single place that answers it: `InMemoryScheduler` uses it, and so does the applier of an attention taken at an
+    offline node (`atencion_en_nodo`), which has to apply "the same rules as the web" without going through the
+    scheduler (it works inside the caller's transaction, not in one of its own).
+    """
+    return target in _ALLOWED_TRANSITIONS[current]
+
+
 class InMemoryScheduler:
     """Small in-memory application service used until persistence is added."""
 
@@ -258,7 +268,7 @@ class InMemoryScheduler:
         actor: str | None = None,
     ) -> Appointment:
         current = self.get(appointment_id)
-        if target not in _ALLOWED_TRANSITIONS[current.status]:
+        if not can_transition(current.status, target):
             raise InvalidTransition(
                 f"cannot transition {current.status.value} to {target.value}"
             )
