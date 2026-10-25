@@ -2,8 +2,10 @@
 import os
 
 from alembic import context
+from alembic.script import ScriptDirectory
 from sqlalchemy import engine_from_config, pool
 
+from libragenda.migrar import TABLA_DE_VERSION, adoptar_la_tabla_de_version_vieja
 from libragenda.sqlalchemy_repository import Base
 
 target_metadata = Base.metadata
@@ -43,7 +45,9 @@ def get_url():
 
 
 def run_migrations_offline():
-    context.configure(url=get_url(), target_metadata=target_metadata, literal_binds=True)
+    context.configure(
+        url=get_url(), target_metadata=target_metadata, literal_binds=True, version_table=TABLA_DE_VERSION,
+    )
     with context.begin_transaction(): context.run_migrations()
 
 def run_migrations_online():
@@ -51,8 +55,15 @@ def run_migrations_online():
     configuration["sqlalchemy.url"] = get_url()
     connectable = engine_from_config(configuration, prefix="sqlalchemy.", poolclass=pool.NullPool)
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
-        with context.begin_transaction(): context.run_migrations()
+        context.configure(
+            connection=connection, target_metadata=target_metadata, version_table=TABLA_DE_VERSION,
+        )
+        with context.begin_transaction():
+            # Autorrenombre de `alembic_version` -> `alembic_version_libragenda`, adentro de la transacción (ADR-017).
+            adoptar_la_tabla_de_version_vieja(
+                connection, {r.revision for r in ScriptDirectory.from_config(context.config).walk_revisions()},
+            )
+            context.run_migrations()
 
 if context.is_offline_mode(): run_migrations_offline()
 else: run_migrations_online()

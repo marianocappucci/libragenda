@@ -1,5 +1,32 @@
 # Changelog — LibraGenda
 
+## v0.14.0 — 2026-10-25
+
+- 🔴 **`clients` pasa a `agenda_clients`** (ADR-018, migración `0010_agenda_clients`). LibraCore tiene su propia tabla
+  `clients` (id entero) y con una sola base por producto las dos no pueden convivir: `libracore-unir-bases` cortaba con
+  «la tabla clients existe en el core y en el dominio». Es un `RENAME`, sin copiar ni borrar filas; las claves foráneas
+  que la apuntan la siguen solas, y la clave primaria pasa a `agenda_clients_pkey`. Downgrade simétrico (no se puede en
+  una base ya unida con LibraCore: aborta con un mensaje que lo dice). `ClientRow` y `AppointmentRow.client_id` usan el
+  nombre nuevo.
+- 🔴 **La tabla de versión de Alembic es `alembic_version_libragenda`** (ADR-017), no `alembic_version` (que es la de
+  LibraCore). **Se autorrenombra**: `libragenda-migrar upgrade` sobre una base de antes mueve la revisión sola, dentro de
+  la transacción de la migración; no toca una `alembic_version` que sea del motor.
+- Una guarda de que ningún nombre de tabla de LibraGenda choque con los de LibraCore y LibraAuth
+  (`tests/test_nombres_de_tablas.py`).
+
+  ⚠️ **Lo que tiene que hacer cada consumidor (GestioLibra y MedLibra, cada uno en su PR):**
+  1. subir el pin a `v0.14.0`;
+  2. cambiar `ForeignKey("clients.id")` por `ForeignKey("agenda_clients.id")` (`client_billing`, `patients`, `walkins`) y
+     cualquier SQL o `Table("clients")` que apunte a la tabla de LibraGenda;
+  3. correr `libragenda-migrar upgrade` **antes** de arrancar la aplicación nueva (un pin nuevo con la base sin migrar
+     crea una `agenda_clients` vacía con `create_all`, y la migración aborta);
+  4. si algo lee `alembic_version` esperando la revisión de LibraGenda, que lea `alembic_version_libragenda`;
+  5. en una base nueva, que `libragenda-migrar` corra **antes** que `libracore-migrar` (la `0002` crea `clients`).
+
+  Sin cambio de puerto ni de dominio. Cubierto por `tests/test_migracion_agenda_clients.py` (SQLite y PostgreSQL: base
+  nueva, base de antes con datos, repetición, tabla ajena intacta, downgrade/upgrade, convivencia con una `clients` y una
+  `alembic_version` de LibraCore) y `tests/test_nombres_de_tablas.py`.
+
 ## v0.13.0 — 2026-10-17
 
 - 🔴 **Un recurso secundario (un consultorio) se traba y se valida en la misma transacción que el primario** (ADR-016).

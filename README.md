@@ -62,4 +62,7 @@ catalog = SqlAlchemyCatalogRepository(sessions)
 ```
 
 Las migraciones Alembic se ejecutan como paso de deploy antes de iniciar la
-API del producto.
+API del producto (`libragenda-migrar upgrade`). Su tabla de versión es
+`alembic_version_libragenda` y su tabla de clientes es `agenda_clients`: los
+dos nombres con prefijo porque LibraCore tiene `alembic_version` y `clients`
+(ADR-017 y ADR-018).

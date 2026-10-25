@@ -213,7 +213,7 @@ def test_migra_una_base_real_con_la_url_pelada():
         migrar.upgrade(destino)
 
         with psycopg.connect(destino, autocommit=True) as c:
-            revision = c.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+            revision = c.execute("SELECT version_num FROM alembic_version_libragenda").fetchone()[0]
             tablas = c.execute(
                 "SELECT count(*) FROM information_schema.tables "
                 "WHERE table_schema = 'public'"
@@ -223,7 +223,7 @@ def test_migra_una_base_real_con_la_url_pelada():
             c.execute(f'DROP DATABASE IF EXISTS "{base}" WITH (FORCE)')
 
     assert revision, "no quedo revision estampada"
-    # Más de una tabla además de `alembic_version`: si las revisiones viajaran
+    # Más de una tabla además de `alembic_version_libragenda`: si las revisiones viajaran
     # vacías, el upgrade saldría en verde sin crear nada.
     assert tablas > 5, f"la base quedo con {tablas} tablas"
 
